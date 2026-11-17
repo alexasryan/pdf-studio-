@@ -1,3 +1,4 @@
+import {resizeDocument} from './resize.js';
 import {workerTask,yieldToUI} from './performance.js';
 import {adjustCanvas,renderDimensions,withDpi} from './image-adjustments.js';
 import * as pdfjs from './vendor/pdf.min.mjs';
@@ -283,6 +284,10 @@ async function protect(file,password,mode) {
 }
 async function operate(id,files,s,report,visualData,prepared) {
   const file=files[0], name=base(file);
+  if(id==='resize') {
+    if(typeof Worker!=='undefined'){const bytes=await file.arrayBuffer();return {name:name+'-'+(s.paperFormat||'A4')+'.pdf',blob:await workerTask('pdf-operations-worker.js',{kind:'resize',bytes,settings:s},[bytes],report)};}
+    return output(name+'-'+(s.paperFormat||'A4')+'.pdf',await resizeDocument(await load(file),s,window.PDFLib,report));
+  }
   if(id==='color') {
     const source=await open(file);
     try {
