@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Личная мастерская для работы с PDF прямо в браузере">
+<title>PDF Studio — личная мастерская</title>
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+</head>
+<body>
+<header class="top"><div class="shell nav">
+<a class="brand" href="#"><span class="brand-icon" data-icon="file-text"></span>PDF Studio</a>
+<nav><a href="#tools">Инструменты</a><a href="#privacy">Конфиденциальность</a></nav>
+<button class="theme secondary" id="theme" type="button" title="Переключить тему" aria-label="Переключить тему" data-icon="moon"></button>
+</div></header>
+<main class="shell">
+<section class="hero">
+<div class="hero-copy"><span class="eyebrow"><i></i> ЛИЧНАЯ PDF-МАСТЕРСКАЯ</span>
+<h1>Всё для PDF.<br><em>В одном месте.</em></h1>
+<p>Редактируйте, сжимайте и конвертируйте документы прямо в браузере.</p>
+</div>
+<div class="art" aria-hidden="true">
+<div class="art-glow"></div><div class="paper back"></div><div class="paper middle"></div>
+<div class="paper front"><span class="fold"></span><span class="pdf-mark">PDF</span><span class="paper-lines"></span></div>
+<div class="floating magic" data-icon="sparkles"></div><div class="floating check" data-icon="check"></div>
+</div>
+</section>
+<section class="drop" id="home-drop"><div class="upload-icon" data-icon="upload-cloud"></div><div class="drop-copy"><strong>Перетащите файлы сюда</strong><span>PDF, изображения, DOCX или текст</span></div><button class="primary" id="choose">Выбрать файлы</button></section>
+<section id="tools" class="catalog"><div class="catalog-head"><div><h2>Инструменты</h2><p id="tool-count"></p></div><label class="search"><span data-icon="search"></span><input id="search" type="search" placeholder="Найти инструмент" aria-label="Найти инструмент"></label></div>
+<div id="filters" class="filters"></div><div id="grid" class="grid"></div></section>
+</main>
+<footer id="privacy"><div class="shell footer"><a class="brand" href="#"><span class="brand-icon" data-icon="file-text"></span>PDF Studio</a><span class="privacy"><span data-icon="shield-check"></span>Файлы обрабатываются на вашем устройстве</span><a href="#tools">К инструментам ↑</a></div></footer>
+<dialog id="workspace" aria-labelledby="operation-title"><div class="dialog-inner">
+<div class="dialog-head"><span id="operation-icon" class="tool-icon"></span><div><h2 id="operation-title"></h2><p id="operation-description"></p></div><button type="button" id="close" class="secondary" aria-label="Закрыть" data-icon="x"></button></div>
+<div class="dialog-body"><label class="picker" id="workspace-drop"><span data-icon="upload-cloud"></span><span>Добавить файлы</span><input id="file-input" type="file" multiple></label>
+<ul id="files" class="files"></ul><div id="options"></div><div id="stage" hidden></div><div id="status" role="status" aria-live="polite"></div></div>
+<div class="dialog-foot"><button class="secondary" id="cancel">Закрыть</button><button class="primary" id="run">Обработать</button></div>
+</div></dialog>
+<input id="quick-input" type="file" accept=".pdf,image/jpeg,image/png,image/webp,.docx,.txt,.csv,.md,.html,.htm" multiple hidden>
+<script src="vendor/pdf-lib.min.js"></script>
+<script src="vendor/fontkit.min.js"></script>
+<script src="vendor/jszip.min.js"></script>
+<script src="vendor/docx.js"></script>
+<script src="vendor/mammoth.browser.min.js"></script>
+<script type="module" src="app.js"></script>
+</body>
+</html>
