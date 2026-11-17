@@ -77,15 +77,19 @@ export async function createPages(file,kind,host,previous,onchange,onerror,getAd
   makeButton('К миниатюрам',()=>{preview.hidden=true;grid.hidden=false;previewVersion++;pendingPreview=null;pagination.hidden=state.items.length<=pageSize;},previewNav);
   preview.append(previewNav,previewBody);
   host.replaceChildren(heading,info,toolbar,preview,grid);
-  async function thumb(index) {
+  async function thumb(index,requested=version) {
+    const previous=cache.get(index);
+    if(previous&&!previous.ready&&previous.version!==requested)cache.delete(index);
     if(!cache.has(index)) {
       const task=thumbnailQueue(async()=>{
-        if(disposed)return null;
+        if(disposed||requested!==version)return null;
         const page=await source.getPage(index+1),unit=page.getViewport({scale:1});
         const {canvas}=await renderPage(source,index,Math.min(1,180/Math.max(unit.width,unit.height)));
-        try {const blob=await asBlob(canvas,'image/jpeg',.78);if(disposed)return null;return URL.createObjectURL(blob);}finally{canvas.width=0;}
+        try {if(disposed||requested!==version)return null;const blob=await asBlob(canvas,'image/jpeg',.78);if(disposed||requested!==version)return null;return URL.createObjectURL(blob);}finally{canvas.width=0;}
       });
+      task.version=requested;task.ready=false;
       cache.set(index,task);
+      task.then(url=>{task.ready=Boolean(url);if(!url&&cache.get(index)===task)cache.delete(index);}).catch(()=>{});
       task.catch(()=>{if(cache.get(index)===task)cache.delete(index);});
       while(cache.size>64){const key=cache.keys().next().value;const old=cache.get(key);cache.delete(key);old.then(url=>{if(url)URL.revokeObjectURL(url);}).catch(()=>{});}
     }
@@ -129,7 +133,7 @@ export async function createPages(file,kind,host,previous,onchange,onerror,getAd
     if(!preview.hidden)void showPage(state.items[Math.min(previewPosition,state.items.length-1)]);
     const selected=state.items.filter(p=>p.selected).length;
     info.textContent=state.items.length+' стр. · Выбрано: '+selected+'. Нажмите на миниатюру для просмотра. Корзина удаляет страницу; стрелки меняют порядок.'+(kind==='split'?' Кнопка «Разрез после» задаёт границы частей.':kind==='extract'?' В результат попадут только выбранные страницы.':['crop','watermark','jpg','png','ocr','color'].includes(kind)?' Инструмент применяется к выбранным страницам.':' Выбор используется для группового поворота и удаления.');
-    observer=new IntersectionObserver(entries=>{for(const entry of entries)if(entry.isIntersecting){observer.unobserve(entry.target);const img=entry.target.querySelector('img');thumb(Number(entry.target.dataset.index)).then(url=>{if(url&&!disposed&&current===version)img.src=url;}).catch(e=>{if(!disposed&&current===version)onerror(e.message,true);});}},{root:null,rootMargin:'250px'});
+    observer=new IntersectionObserver(entries=>{if(disposed||current!==version)return;for(const entry of entries)if(entry.isIntersecting){observer.unobserve(entry.target);const img=entry.target.querySelector('img');thumb(Number(entry.target.dataset.index),current).then(url=>{if(url&&!disposed&&current===version)img.src=url;}).catch(e=>{if(!disposed&&current===version)onerror(e.message,true);});}},{root:null,rootMargin:'250px'});
     gridPage=Math.max(0,Math.min(gridPage,Math.ceil(state.items.length/pageSize)-1));
     const first=gridPage*pageSize;
     before.disabled=gridPage===0;after.disabled=first+pageSize>=state.items.length;pagination.hidden=!preview.hidden||state.items.length<=pageSize;
