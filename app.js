@@ -1,3 +1,4 @@
+import {createPages,transformPages,pageResult,pageTools} from './pages.js';
 import {categories,tools,formats,many,visual,schemas,hints,pdfOnly} from './tools.js';
 import {formData,load,operate} from './pdf.js';
 import {createViewer} from './viewer.js';
@@ -15,6 +16,21 @@ document.querySelectorAll('[data-icon]').forEach(el=>drawIcon(el,el.dataset.icon
 const toolMap=new Map(tools.map(tool=>[tool[0],tool]));
 let filter=-1, id, files=[], viewer, prepared, generation=0, busy=false, preparing=false, download;
 const fields=new Map();
+let activeFile=null, pageManager=null;
+const pageStates=new Map(), visualCache=new Map();
+function clearDocuments() {
+  for(const entry of visualCache.values()) void entry.viewer.dispose().catch(()=>{});
+  visualCache.clear();pageStates.clear();activeFile=null;
+}
+function pageSettings(file) {
+  const value=settings(), state=pageStates.get(file);
+  if(state&&fields.has('pages')) {
+    const indexes=state.items.flatMap((p,i)=>p.selected?[String(i+1)]:[]);
+    if(!indexes.length) throw Error('Выберите хотя бы одну страницу.');
+    value.pages=indexes.join(',');
+  }
+  return value;
+}
 function theme(value) {
   document.documentElement.dataset.theme=value;
   drawIcon($('theme'),value==='dark'?'sun':'moon');
@@ -81,6 +97,7 @@ function renderOptions() {
   const panel=document.createElement('div');
   panel.className='fields';
   for(const [key,label,type,value,minimum,maximum] of schemas[id]||[]) {
+    if(pageTools.has(id)) continue;
     const wrapper=document.createElement('label');
     wrapper.append(label);
     const field=document.createElement(type==='select'?'select':'input');
@@ -94,11 +111,20 @@ function renderOptions() {
       if(type==='text') {field.maxLength=key==='pages'||key==='ranges'?2000:500;}
     }
     wrapper.append(field);
+    if(key==='pages'||key==='ranges') wrapper.hidden=true;
     if(type==='text'&&minimum) {
       const hint=document.createElement('small');
       hint.className='hint';
       hint.textContent=minimum;
       wrapper.append(hint);
+    }
+    if(type==='number') {
+      const stepper=document.createElement('div');stepper.className='number-stepper';
+      for(const [caption,step] of [['−',-1],['+',1]]) {
+        const button=document.createElement('button');button.type='button';button.className='secondary';button.textContent=caption;button.setAttribute('aria-label',(step<0?'Уменьшить: ':'Увеличить: ')+label);
+        button.onclick=()=>{field.value=Math.max(Number(minimum),Math.min(Number(maximum),Number(field.value)+step));field.dispatchEvent(new Event('change'));};stepper.append(button);
+      }
+      wrapper.append(stepper);
     }
     panel.append(wrapper);
     fields.set(key,field);
@@ -115,6 +141,11 @@ function renderOptions() {
     refresh();
   }
   controls.append(panel);
+  if(id==='crop') {
+    const presets=document.createElement('div');presets.className='page-toolbar';
+    for(const value of [0,10,20,40]) {const button=document.createElement('button');button.type='button';button.className='secondary';button.textContent=value===0?'Без полей':'Поля '+value+' пт';button.onclick=()=>{for(const key of ['left','top','right','bottom'])fields.get(key).value=value;};presets.append(button);}
+    controls.append(presets);
+  }
   if(hints[id]) {
     const hint=document.createElement('p');
     hint.className='hint';
@@ -130,6 +161,7 @@ function sync() {
   for(const button of $('files').querySelectorAll('button')) button.disabled=locked||button.dataset.boundary==='true';
   controls.inert=locked;
   stage.inert=locked;
+  $('page-manager').inert=locked;
   run.hidden=id==='view';
   run.disabled=busy||preparing||!files.length||
     (id==='merge'&&files.length<2)||(visual.has(id)&&!viewer)||(id==='form'&&!prepared?.fields.length);
@@ -143,7 +175,7 @@ function fileList() {
   $('files').replaceChildren(...files.map((file,index)=>{
     const row=document.createElement('li');
     const name=document.createElement('span');
-    name.textContent=file.name+' · '+sizeText(file.size);
+    name.textContent=file.name+' · '+sizeText(file.size)+(file===activeFile?' · Открыт':'');
     row.append(name);
     const action=(caption,title,callback,boundary=false)=>{
       const button=document.createElement('button');
@@ -156,6 +188,7 @@ function fileList() {
       button.onclick=callback;
       row.append(button);
     };
+    if(files.length>1) action('Открыть','Предпросмотр и правки',()=>{activeFile=file;void changed();});
     if(files.length>1) for(const [delta,caption,label] of [[-1,'↑','Выше'],[1,'↓','Ниже']]) {
       action(caption,label,()=>{
         const target=index+delta;
@@ -169,7 +202,10 @@ function fileList() {
 }
 function resetStage() {
   generation++;
-  if(viewer) void viewer.dispose().catch(()=>{});
+  if(pageManager) void pageManager.dispose().catch(()=>{});
+  pageManager=null;
+  $('page-manager').replaceChildren();
+  $('page-manager').hidden=true;
   viewer=null;
   prepared=null;
   preparing=false;
@@ -210,21 +246,32 @@ async function changed() {
   report('');
   fileList();
   const current=generation;
-  const file=files[0];
-  if(!file||!(visual.has(id)||['form','metadata'].includes(id))) {sync();return;}
+  const file=files.includes(activeFile)?activeFile:files[0];
+  activeFile=file;fileList();
+  if(!file) {sync();return;}
   preparing=true;
   sync();
   report('Открываем документ…');
   try {
-    if(visual.has(id)) {
+    const isPdf=/\.pdf$/i.test(file.name);
+    if(isPdf&&id!=='unlock') {
       const host=document.createElement('div');
-      const ready=await createViewer(file,id,host,settings,(message,error)=>{if(generation===current) report(message,error);});
-      if(generation!==current) {await ready.dispose();return;}
+      const manager=await createPages(file,id,host,pageStates.get(file),state=>pageStates.set(file,state),(message,error)=>{if(generation===current)report(message,error);});
+      if(generation!==current){await manager.dispose();return;}
+      pageManager=manager;
+      $('page-manager').replaceChildren(host);$('page-manager').hidden=false;
+    }
+    if(visual.has(id)) {
+      const cached=visualCache.get(file);
+      const host=cached?.host||document.createElement('div');
+      const ready=cached?.viewer||await createViewer(file,id,host,settings,(message,error)=>{if(file===activeFile) report(message,error);});
+      if(generation!==current) {if(!cached)await ready.dispose();return;}
+      visualCache.set(file,{host,viewer:ready});
       stage.replaceChildren(host);
       stage.hidden=false;
       viewer=ready;
       if(!status.classList.contains('error')) report('');
-    } else {
+    } else if(['form','metadata'].includes(id)) {
       const doc=await load(file);
       if(generation!==current) return;
       report('');
@@ -256,7 +303,8 @@ function addFiles(entries) {
       format==='image/jpeg'?/\.jpe?g$/i.test(file.name):file.name.toLowerCase().endsWith('.'+format.split('/')[1])
     )));
   if(!supported.length) {report('Выбранный формат не поддерживается этим инструментом.',true);return;}
-  files=many.has(id)?[...files,...supported]:[supported[0]];
+  files=[...files,...supported];
+  if(!activeFile)activeFile=supported[0];
   void changed();
   if(supported.length!==entries.length) report('Некоторые файлы пропущены из-за неподдерживаемого формата.');
 }
@@ -264,14 +312,15 @@ function show(key,initial=[]) {
   id=key;
   const [,,description,,icon,color]=toolMap.get(key);
   $('operation-title').textContent=toolMap.get(key)[1];
-  $('operation-description').textContent=description;
+  $('operation-description').textContent=description+' · Можно добавить несколько файлов. Кнопка «Открыть» переключает документ.';
   $('operation-icon').className='tool-icon '+color;
   drawIcon($('operation-icon'),icon);
+  clearDocuments();
   files=[];
   input.value='';
   input.accept=formats[id]||pdfOnly;
-  input.multiple=many.has(id);
-  run.textContent=visual.has(id)?'Сохранить PDF':'Обработать';
+  input.multiple=true;
+  run.textContent=id==='merge'?'Объединить файлы':visual.has(id)?'Сохранить PDF':'Обработать открытый файл';
   renderOptions();
   if(!dialog.open) dialog.showModal();
   if(initial.length) addFiles(initial);
@@ -281,7 +330,7 @@ function close() {if(!busy) dialog.close();}
 $('close').onclick=close;
 $('cancel').onclick=close;
 dialog.oncancel=event=>{if(busy) event.preventDefault();};
-dialog.onclose=()=>{resetStage();clearDownload();};
+dialog.onclose=()=>{resetStage();clearDocuments();clearDownload();};
 input.onchange=()=>{addFiles(input.files);input.value='';};
 
 run.onclick=async()=>{
@@ -293,8 +342,22 @@ run.onclick=async()=>{
   report('Обрабатываем документ…');
   try {
     await new Promise(resolve=>setTimeout(resolve,30));
-    const result=await operate(id,files,settings(),report,viewer,prepared);
-    const message=result.note||(id==='compress'?'Готово. '+sizeText(files[0].size)+' → '+sizeText(result.blob.size)+'.':'Готово · '+sizeText(result.blob.size));
+    const file=activeFile||files[0];
+    const state=pageStates.get(file);
+    let result;
+    if(state&&pageTools.has(id)) result=await pageResult(file,state,id);
+    else if(id==='merge') {
+      const entries=[];
+      for(const entry of files) entries.push(pageStates.has(entry)?await transformPages(entry,pageStates.get(entry)):entry);
+      result=await operate(id,entries,settings(),report);
+    } else if(state&&(visual.has(id)||['form','metadata'].includes(id))) {
+      result=await operate(id,[file],pageSettings(file),report,viewer,prepared);
+      if(result.blob.type==='application/pdf') result.blob=await transformPages(new File([result.blob],result.name,{type:'application/pdf'}),state);
+    } else {
+      const entry=state?await transformPages(file,state):file;
+      result=await operate(id,id==='images'?files:[entry],pageSettings(file),report,viewer,prepared);
+    }
+    const message=result.note||(id==='compress'?'Готово. '+sizeText(activeFile.size)+' → '+sizeText(result.blob.size)+'.':'Готово · '+sizeText(result.blob.size));
     report(message);
     const link=document.createElement('a');
     link.className='primary';

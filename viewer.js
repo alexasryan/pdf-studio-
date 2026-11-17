@@ -158,7 +158,7 @@ export async function createViewer(file,kind,stage,settings,report) {
       await source.loadingTask.destroy();
     },
     export:async(id,progress)=>{
-      if(![...marks.values()].some(entries=>entries.length)) throw Error('Сначала добавьте хотя бы одну правку на страницу.');
+      if(![...marks.values()].some(entries=>entries.length)) return {name:base(file)+'-edited.pdf',blob:file};
       if(id==='redact') {
         const indexes=Array.from({length:source.numPages},(_,i)=>i);
         const bytes=await rasterPdf(source,indexes,2,.95,progress,(i,canvas)=>paint(canvas,marks.get(i)||[]));
