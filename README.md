@@ -30,4 +30,4 @@ npm.cmd run prepare-assets
 
 Сайт: https://alexasryan.github.io/pdf-studio-/
 
-Публикация выполняется автоматически через GitHub Actions при изменении ветки `main`. Загружается готовая статическая версия из `dist/`.
+Исходники находятся в `main`, готовый сайт — в ветке `gh-pages`. В Settings → Pages выберите Deploy from a branch, ветку `gh-pages`, папку `/ (root)` и нажмите Save. Для обновления сайта публикуйте содержимое `dist/` в корень `gh-pages`.
