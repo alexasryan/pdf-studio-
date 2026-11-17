@@ -176,7 +176,7 @@ function renderOptions() {
       if(type==='text') {field.maxLength=key==='pages'||key==='ranges'?2000:500;}
     }
     wrapper.append(field);
-    if(['color','jpg','png'].includes(id)) {
+    if(['color','jpg','png','resize'].includes(id)) {
       const valueLabel=document.createElement('output');
       if(type==='range'){valueLabel.textContent=field.value;wrapper.append(valueLabel);}
       const update=()=>{if(type==='range')valueLabel.textContent=field.value;refreshAdjustments();};
@@ -199,6 +199,10 @@ function renderOptions() {
     }
     panel.append(wrapper);
     fields.set(key,field);
+  }
+  if(id==='resize'){
+    const refresh=()=>{const custom=fields.get('paperFormat').value==='custom';for(const key of ['widthMm','heightMm']){fields.get(key).parentElement.hidden=!custom;fields.get(key).disabled=!custom;}};
+    fields.get('paperFormat').addEventListener('change',refresh);refresh();
   }
   if(id==='edit') {
     const refresh=()=>{
@@ -342,7 +346,7 @@ async function changed() {
     const isPdf=/\.pdf$/i.test(file.name);
     if(isPdf&&id!=='unlock') {
       const host=document.createElement('div');
-      const manager=await createPages(file,id,host,pageStates.get(file),state=>pageStates.set(file,state),(message,error)=>{if(generation===current)report(message,error);},()=>['color','jpg','png'].includes(id)?settings():null);
+      const manager=await createPages(file,id,host,pageStates.get(file),state=>pageStates.set(file,state),(message,error)=>{if(generation===current)report(message,error);},()=>['color','jpg','png','resize'].includes(id)?settings():null);
       if(generation!==current){await manager.dispose();return;}
       pageManager=manager;
       $('page-manager').replaceChildren(host);$('page-manager').hidden=false;

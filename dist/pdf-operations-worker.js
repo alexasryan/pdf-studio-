@@ -1,3 +1,4 @@
+import {resizeDocument} from './resize.js';
 import './vendor/pdf-lib.min.js';
 import './vendor/jszip.min.js';
 const {PDFDocument,degrees}=self.PDFLib;
@@ -19,6 +20,7 @@ async function process(data) {
     return new Blob([await result.save({objectsPerTick:30})],{type:'application/pdf'});
   }
   const source=await PDFDocument.load(data.bytes,{updateMetadata:false});
+  if(data.kind==='resize')return new Blob([await resizeDocument(source,data.settings,self.PDFLib,message=>self.postMessage({id:data.id,progress:message}))],{type:'application/pdf'});
   if(data.kind==='split'){
     const zip=new self.JSZip();
     for(const [i,items] of data.groups.entries()){self.postMessage({id:data.id,progress:'Часть '+(i+1)+' / '+data.groups.length});zip.file('part-'+String(i+1).padStart(3,'0')+'.pdf',await copy(source,items));}

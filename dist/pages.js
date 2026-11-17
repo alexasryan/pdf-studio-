@@ -1,3 +1,4 @@
+import {resizePreview} from './resize.js';
 import {workerTask,renderQueue} from './performance.js';
 import {adjustCanvas} from './image-adjustments.js';
 import {ensureScript,acquire,open,renderPage,load,base,asBlob,canvasOf} from './pdf.js';
@@ -109,13 +110,14 @@ export async function createPages(file,kind,host,previous,onchange,onerror,getAd
         const job=pendingPreview;pendingPreview=null;
         const key=job.item.index+':'+job.scale;
         let raw=rawPreviews.get(key);
-        if(!raw){raw=(await renderPage(source,job.item.index,job.scale)).canvas;if(disposed){raw.width=0;break;}rawPreviews.set(key,raw);while(rawPreviews.size>2){const oldest=rawPreviews.keys().next().value;rawPreviews.get(oldest).width=0;rawPreviews.delete(oldest);}}
+        if(!raw){const rendered=await renderPage(source,job.item.index,job.scale);raw=rendered.canvas;raw.pdfUnit=rendered.unit;if(disposed){raw.width=0;break;}rawPreviews.set(key,raw);while(rawPreviews.size>2){const oldest=rawPreviews.keys().next().value;rawPreviews.get(oldest).width=0;rawPreviews.delete(oldest);}}
         if(disposed||job.request!==previewVersion)continue;
-        const canvas=canvasOf(raw.width,raw.height);canvas.getContext('2d').drawImage(raw,0,0);
+        const settings=getAdjustments();const resizing=Boolean(settings?.paperFormat&&job.item.selected);
+        const canvas=resizing?resizePreview(raw,settings,job.item.angle):canvasOf(raw.width,raw.height);if(!resizing)canvas.getContext('2d').drawImage(raw,0,0);
         try{
-          await adjustCanvas(canvas,getAdjustments());
+          if(!settings?.paperFormat)await adjustCanvas(canvas,settings);
           if(disposed||job.request!==previewVersion){canvas.width=0;continue;}
-          canvas.style.transform='rotate('+job.item.angle+'deg)';canvas.style.width=job.width+'%';canvas.style.maxWidth='none';
+          canvas.style.transform='rotate('+(resizing?0:job.item.angle)+'deg)';canvas.style.width=job.width+'%';canvas.style.maxWidth='none';
           for(const previous of previewBody.querySelectorAll('canvas'))previous.width=0;
           previewBody.replaceChildren(canvas);
         }catch(error){canvas.width=0;throw error;}
@@ -132,7 +134,7 @@ export async function createPages(file,kind,host,previous,onchange,onerror,getAd
     undo.disabled=!history.length;
     if(!preview.hidden)void showPage(state.items[Math.min(previewPosition,state.items.length-1)]);
     const selected=state.items.filter(p=>p.selected).length;
-    info.textContent=state.items.length+' стр. · Выбрано: '+selected+'. Нажмите на миниатюру для просмотра. Корзина удаляет страницу; стрелки меняют порядок.'+(kind==='split'?' Кнопка «Разрез после» задаёт границы частей.':kind==='extract'?' В результат попадут только выбранные страницы.':['crop','watermark','jpg','png','ocr','color'].includes(kind)?' Инструмент применяется к выбранным страницам.':' Выбор используется для группового поворота и удаления.');
+    info.textContent=state.items.length+' стр. · Выбрано: '+selected+'. Нажмите на миниатюру для просмотра. Корзина удаляет страницу; стрелки меняют порядок.'+(kind==='split'?' Кнопка «Разрез после» задаёт границы частей.':kind==='extract'?' В результат попадут только выбранные страницы.':['crop','watermark','jpg','png','ocr','color','resize'].includes(kind)?' Инструмент применяется к выбранным страницам.':' Выбор используется для группового поворота и удаления.');
     observer=new IntersectionObserver(entries=>{if(disposed||current!==version)return;for(const entry of entries)if(entry.isIntersecting){observer.unobserve(entry.target);const img=entry.target.querySelector('img');thumb(Number(entry.target.dataset.index),current).then(url=>{if(url&&!disposed&&current===version)img.src=url;}).catch(e=>{if(!disposed&&current===version)onerror(e.message,true);});}},{root:null,rootMargin:'250px'});
     gridPage=Math.max(0,Math.min(gridPage,Math.ceil(state.items.length/pageSize)-1));
     const first=gridPage*pageSize;
