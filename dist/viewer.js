@@ -1,4 +1,4 @@
-import {asBlob,base,canvasOf,imageBitmap,load,open,output,rasterPdf,renderPage,stamp} from './pdf.js';
+import {acquire,asBlob,base,canvasOf,imageBitmap,load,open,output,rasterPdf,renderPage,stamp} from './pdf.js';
 const {degrees}=window.PDFLib;
 function paint(canvas,marks) {
   const ctx=canvas.getContext('2d');
@@ -28,7 +28,8 @@ function paint(canvas,marks) {
   }
 }
 export async function createViewer(file,kind,stage,settings,report) {
-  const source=await open(file);
+  const lease=await acquire(file);
+  const source=lease.doc;
   let index=0, snapshot, current, draft, disposed=false, generation=0;
   const marks=new Map();
   const controls=document.createElement('div');
@@ -60,6 +61,8 @@ export async function createViewer(file,kind,stage,settings,report) {
   pageWrap.className='page-view';
   const overlay=canvasOf(1,1);
   const pageMarks=()=>marks.get(index)||[];
+  let paintFrame=0;
+  const scheduleRedraw=()=>{if(!paintFrame)paintFrame=requestAnimationFrame(()=>{paintFrame=0;redraw();});};
   function redraw(){
     if(!snapshot||disposed) return;
     overlay.getContext('2d').clearRect(0,0,overlay.width,overlay.height);
@@ -77,7 +80,8 @@ export async function createViewer(file,kind,stage,settings,report) {
     draft=null;
     try {
       const result=await renderPage(source,target,1.35);
-      if(disposed||turnId!==generation) return;
+      if(disposed||turnId!==generation){result.canvas.width=0;return;}
+      if(snapshot)snapshot.canvas.width=0;
       snapshot=result;
       index=target;
       overlay.width=snapshot.canvas.width;
@@ -139,7 +143,7 @@ export async function createViewer(file,kind,stage,settings,report) {
     const p=point(event);
     draft.end=p;
     if(draft.type==='ink') draft.points.push(p);
-    redraw();
+    scheduleRedraw();
   };
   overlay.addEventListener('pointermove',extend);
   overlay.addEventListener('pointerup',event=>{
@@ -155,10 +159,14 @@ export async function createViewer(file,kind,stage,settings,report) {
   stage.hidden=false;
   await turn(0);
   return {
+    suspend:()=>{generation++;cancelAnimationFrame(paintFrame);paintFrame=0;if(snapshot)snapshot.canvas.width=0;snapshot=null;overlay.width=0;pageWrap.replaceChildren();void source.cleanup().catch(()=>{});},
+    resume:async()=>{if(!snapshot&&!disposed)await turn(0);},
     dispose:async()=>{
       disposed=true;
+      cancelAnimationFrame(paintFrame);
       for(const entries of marks.values()) for(const mark of entries) mark.bitmap?.close?.();
-      await source.loadingTask.destroy();
+      lease.release();
+      if(snapshot)snapshot.canvas.width=0;overlay.width=0;
     },
     export:async(id,progress)=>{
       if(![...marks.values()].some(entries=>entries.length)) return {name:base(file)+'-edited.pdf',blob:file};

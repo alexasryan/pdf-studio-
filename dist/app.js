@@ -51,7 +51,7 @@ async function switchTool(next) {
       let entry=file;
       const cached=visualCache.get(file);
       if(file===activeFile&&['form','metadata'].includes(id)) {const result=await operate(id,[file],settings(),report,viewer,prepared);entry=new File([result.blob],file.name,{type:'application/pdf'});}
-      if(cached&&id!=='view') {const result=await cached.viewer.export(id,report);entry=new File([result.blob],file.name,{type:'application/pdf'});}
+      if(cached&&id!=='view') {try{const result=await cached.viewer.export(id,report);entry=new File([result.blob],file.name,{type:'application/pdf'});}finally{if(file!==activeFile)cached.viewer.suspend?.();}}
       if(pageStates.has(file))entry=await transformPages(entry,pageStates.get(file));
       updated.push(entry);
     }
@@ -280,12 +280,13 @@ function fileList() {
         changed();
       },index+delta<0||index+delta>=files.length);
     }
-    action('×','Удалить',()=>{files.splice(index,1);changed();});
+    action('×','Удалить',()=>{files.splice(index,1);const cached=visualCache.get(file);if(cached)void cached.viewer.dispose().catch(()=>{});visualCache.delete(file);pageStates.delete(file);changed();});
     return row;
   }));
 }
 function resetStage() {
   generation++;
+  viewer?.suspend?.();
   if(pageManager) void pageManager.dispose().catch(()=>{});
   pageManager=null;
   $('page-manager').replaceChildren();
@@ -351,6 +352,8 @@ async function changed() {
       const host=cached?.host||document.createElement('div');
       const ready=cached?.viewer||await createViewer(file,id,host,settings,(message,error)=>{if(file===activeFile) report(message,error);});
       if(generation!==current) {if(!cached)await ready.dispose();return;}
+      if(cached)await ready.resume?.();
+      if(generation!==current)return;
       visualCache.set(file,{host,viewer:ready});
       stage.replaceChildren(host);
       stage.hidden=false;

@@ -1,3 +1,4 @@
+import {workerTask,yieldToUI} from './performance.js';
 import {adjustCanvas,renderDimensions,withDpi} from './image-adjustments.js';
 import * as pdfjs from './vendor/pdf.min.mjs';
 pdfjs.GlobalWorkerOptions.workerSrc = new URL('./vendor/pdf.worker.min.mjs', import.meta.url).href;
@@ -8,10 +9,31 @@ const canvasOf = (w,h) => Object.assign(document.createElement('canvas'), {width
 const base = file => file.name.replace(/\.[^.]+$/, '');
 const output = (name, bytes, type='application/pdf') => ({name, blob:new Blob([bytes], {type})});
 const load = async file => PDFDocument.load(await read(file), {updateMetadata:false});
+let sharedPdfWorker;
+const sharedWorker=()=>{if(typeof pdfjs.PDFWorker!=='function')return undefined;if(!sharedPdfWorker||sharedPdfWorker.destroyed)sharedPdfWorker=new pdfjs.PDFWorker();return sharedPdfWorker;};
 const open = async file => pdfjs.getDocument({
+  worker:sharedWorker(),
   data:await read(file), cMapUrl:vendor+'cmaps/', cMapPacked:true, standardFontDataUrl:vendor+'standard_fonts/',
   wasmUrl:vendor+'wasm/', iccUrl:vendor+'iccs/', isEvalSupported:false,
 }).promise;
+
+const previewSources=new WeakMap();
+async function acquire(file) {
+  let entry=previewSources.get(file);
+  if(!entry){entry={promise:open(file),refs:0,timer:null};previewSources.set(file,entry);entry.promise.catch(()=>{if(previewSources.get(file)===entry)previewSources.delete(file);});}
+  clearTimeout(entry.timer);entry.refs++;
+  let doc;
+  try{doc=await entry.promise;}catch(error){entry.refs--;throw error;}
+  let released=false;
+  return {doc,release:()=>{if(released)return;released=true;entry.refs--;if(!entry.refs)entry.timer=setTimeout(()=>{if(!entry.refs){previewSources.delete(file);void doc.loadingTask.destroy().catch(()=>{});}},800);}};
+}
+
+const scriptLoads=new Map();
+function ensureScript(name,globalName) {
+  if(window[globalName])return Promise.resolve();
+  if(!scriptLoads.has(name))scriptLoads.set(name,new Promise((resolve,reject)=>{const script=document.createElement('script');script.src=vendor+name;script.onload=resolve;script.onerror=()=>{script.remove();scriptLoads.delete(name);reject(Error('Не удалось загрузить компонент. Проверьте подключение.'));};document.head.append(script);}));
+  return scriptLoads.get(name);
+}
 
 function pageList(value, count, required=false, unique=true) {
   value = value.trim();
@@ -77,6 +99,7 @@ async function extractText(source,report) {
   return result;
 }
 async function toWord(pages) {
+  await ensureScript('docx.js','docx');
   const {Document,Packer,Paragraph}=window.docx;
   const children=pages.flatMap((page,index)=>page.split('\n').map((text,line)=>new Paragraph({
     text,pageBreakBefore:index>0&&line===0,
@@ -107,7 +130,7 @@ async function imagesPdf(files) {
 }
 async function readText(file) {
   const bytes=await read(file);
-  if(/\.docx$/i.test(file.name)) return (await window.mammoth.extractRawText({arrayBuffer:bytes})).value;
+  if(/\.docx$/i.test(file.name)){await ensureScript('mammoth.browser.min.js','mammoth');return (await window.mammoth.extractRawText({arrayBuffer:bytes})).value;}
   let text=new TextDecoder().decode(bytes);
   if(text.includes('\ufffd')) text=new TextDecoder('windows-1251').decode(bytes);
   if(!/\.html?$/i.test(file.name)) return text;
@@ -195,12 +218,14 @@ async function ocr(source,file,settings,report) {
 const photoZip = async (source,settings,id,report) => {
   const indexes=pageList(settings.pages,source.numPages);
   const mime=id==='png'?'image/png':'image/jpeg';
-  const zip=new window.JSZip();
+  if(indexes.length>1)await ensureScript('jszip.min.js','JSZip');
+  const zip=indexes.length>1?new window.JSZip():null;
   for (const [position,index] of indexes.entries()) {
     report('Экспорт: '+(position+1)+' / '+indexes.length);
+    await yieldToUI();
     const dpi=Number(settings.dpi||Number(settings.scale||2)*72);
     const {canvas}=await renderPage(source,index,dpi/72,true);
-    adjustCanvas(canvas,settings);
+    await adjustCanvas(canvas,settings);
     const blob=await withDpi(await asBlob(canvas,mime,Number(settings.jpegQuality||95)/100),dpi);
     canvas.width=0;
     if(indexes.length===1) return {blob,extension:id};
@@ -237,6 +262,7 @@ async function applyForm(doc,fields) {
   return doc.save({updateFieldAppearances:false});
 }
 async function embedTextFont(doc) {
+  await ensureScript('fontkit.min.js','fontkit');
   doc.registerFontkit(window.fontkit);
   const response=await fetch(vendor+'dejavu-sans.ttf');
   if(!response.ok) throw Error('Не удалось загрузить шрифт.');
@@ -264,9 +290,10 @@ async function operate(id,files,s,report,visualData,prepared) {
       const selected=new Set(pageList(s.pages,source.numPages));
       for(let i=0;i<source.numPages;i++) {
         report('Цветокоррекция: '+(i+1)+' / '+source.numPages);
+        await yieldToUI();
         if(!selected.has(i)) {const [page]=await result.copyPages(original,[i]);result.addPage(page);continue;}
         const {canvas,unit}=await renderPage(source,i,Number(s.dpi||150)/72,true);
-        adjustCanvas(canvas,s);
+        await adjustCanvas(canvas,s);
         const image=await result.embedPng(await (await asBlob(canvas,'image/png')).arrayBuffer());canvas.width=0;
         result.addPage([unit.width,unit.height]).drawImage(image,{x:0,y:0,width:unit.width,height:unit.height});
       }
@@ -278,6 +305,7 @@ async function operate(id,files,s,report,visualData,prepared) {
   if(id==='images') return output(name+'-images.pdf',await imagesPdf(files));
   if(id==='docx'||id==='textpdf') return output(name+'.pdf',await textPdf(await readText(file)));
   if(id==='merge') {
+    if(typeof Worker!=='undefined')return {name:name+'-merged.pdf',blob:await workerTask('pdf-operations-worker.js',{kind:'merge',files},[],report)};
     const result=await PDFDocument.create();
     for (const entry of files) {
       const doc=await load(entry);
@@ -312,6 +340,7 @@ async function operate(id,files,s,report,visualData,prepared) {
   const doc=prepared?.doc||await load(file);
   const total=doc.getPageCount();
   if(id==='split') {
+    await ensureScript('jszip.min.js','JSZip');
     const groups=s.ranges.trim()?s.ranges.split(';').map(range=>pageList(range,total,true)):doc.getPageIndices().map(index=>[index]);
     const zip=new window.JSZip();
     for(const [index,group] of groups.entries()) {
@@ -375,4 +404,4 @@ async function operate(id,files,s,report,visualData,prepared) {
   if(id==='compress'&&bytes.length>=file.size) return {name:file.name,blob:file,note:'Пересохранение без потерь не уменьшило этот PDF. Можно скачать оригинал.'};
   return output(name+'-'+(id==='compress'?'compressed':id)+'.pdf',bytes);
 }
-export {asBlob,base,canvasOf,formData,imageBitmap,load,open,operate,output,pageList,rasterPdf,renderPage,stamp};
+export {ensureScript,acquire,asBlob,base,canvasOf,formData,imageBitmap,load,open,operate,output,pageList,rasterPdf,renderPage,stamp};
