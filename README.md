@@ -28,6 +28,6 @@ npm.cmd run prepare-assets
 
 ## GitHub Pages
 
-Сайт: https://alexasryan.github.io/pdf-studio/
+Сайт: https://alexasryan.github.io/pdf-studio-/
 
 Публикация выполняется автоматически через GitHub Actions при изменении ветки `main`. Загружается готовая статическая версия из `dist/`.
