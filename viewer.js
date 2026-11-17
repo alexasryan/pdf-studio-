@@ -48,11 +48,14 @@ export async function createViewer(file,kind,stage,settings,report) {
   controls.append(counter);
   const next=button('→',()=>turn(1));
   next.setAttribute('aria-label','Следующая страница');
-  const undo=kind==='view'?null:button('Отменить штрих',()=>{
+  const undo=kind==='view'?null:button('Отменить правку',()=>{
     const mark=marks.get(index)?.pop();
     mark?.bitmap?.close?.();
     redraw();
   });
+  let zoom=1;
+  button('−',()=>{zoom=Math.max(.5,zoom-.25);pageWrap.style.width=(zoom*100)+'%';});
+  button('+',()=>{zoom=Math.min(2,zoom+.25);pageWrap.style.width=(zoom*100)+'%';});
   const pageWrap=document.createElement('div');
   pageWrap.className='page-view';
   const overlay=canvasOf(1,1);

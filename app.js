@@ -16,8 +16,70 @@ document.querySelectorAll('[data-icon]').forEach(el=>drawIcon(el,el.dataset.icon
 const toolMap=new Map(tools.map(tool=>[tool[0],tool]));
 let filter=-1, id, files=[], viewer, prepared, generation=0, busy=false, preparing=false, download;
 const fields=new Map();
-let activeFile=null, pageManager=null;
+let activeFile=null, pageManager=null, workspaceMode='document';
 const pageStates=new Map(), visualCache=new Map();
+function workspaceView(mode=workspaceMode) {
+  workspaceMode=mode;
+  const hasDocument=Boolean(activeFile&&(/\.pdf$/i.test(activeFile.name)));
+  $('workspace-empty').hidden=Boolean(files.length);
+  $('active-document').textContent=activeFile?.name||'';
+  $('document-tab').disabled=!hasDocument||preparing;
+  $('pages-tab').disabled=!pageManager||preparing;
+  $('document-tab').setAttribute('aria-selected',String(mode==='document'));
+  $('pages-tab').setAttribute('aria-selected',String(mode==='pages'));
+  if(mode==='pages') {
+    stage.hidden=true;$('page-manager').hidden=!pageManager;pageManager?.showGrid();
+  } else if(visual.has(id)&&viewer) {
+    stage.hidden=false;$('page-manager').hidden=true;
+  } else {
+    stage.hidden=id!=='form'||!prepared;
+    $('page-manager').hidden=!pageManager;
+    if(pageManager) void pageManager.showDocument();
+  }
+}
+$('document-tab').onclick=()=>workspaceView('document');
+$('pages-tab').onclick=()=>workspaceView('pages');
+$('toggle-settings').onclick=()=>{const sidebar=$('workspace-sidebar');sidebar.hidden=!sidebar.hidden;$('toggle-settings').setAttribute('aria-expanded',String(!sidebar.hidden));};
+async function switchTool(next) {
+  if(next===id||busy||preparing)return;
+  const entries=[...files];busy=true;sync();report('Сохраняем правки перед переключением…');
+  try {
+    const updated=[];
+    for(const file of entries) {
+      let entry=file;
+      const cached=visualCache.get(file);
+      if(file===activeFile&&['form','metadata'].includes(id)) {const result=await operate(id,[file],settings(),report,viewer,prepared);entry=new File([result.blob],file.name,{type:'application/pdf'});}
+      if(cached&&id!=='view') {const result=await cached.viewer.export(id,report);entry=new File([result.blob],file.name,{type:'application/pdf'});}
+      if(pageStates.has(file))entry=await transformPages(entry,pageStates.get(file));
+      updated.push(entry);
+    }
+    busy=false;show(next,updated,Math.max(0,entries.indexOf(activeFile)));
+  } catch(error){report(errorText(error),true);}finally{busy=false;$('workspace-tool').value=id;sync();}
+}
+$('workspace-tool').onchange=event=>void switchTool(event.target.value);
+function toolNavigation() {
+  const select=$('workspace-tool');select.replaceChildren();
+  const current=activeFile;
+  const groups=new Map();
+  for(const [key,title,,category] of tools) {
+    const accept=(formats[key]||pdfOnly).split(',');
+    const compatible=!current||accept.some(type=>type.startsWith('.')?current.name.toLowerCase().endsWith(type):current.type===type);
+    if(compatible||key===id) {
+      if(!groups.has(category)){const group=document.createElement('optgroup');group.label=categories[category];groups.set(category,group);select.append(group);}
+      groups.get(category).append(new Option(title,key,false,key===id));
+    }
+  }
+  const actions=$('edit-actions');actions.replaceChildren();actions.hidden=id!=='edit';
+  if(id==='edit') {
+    const mode=fields.get('mode');mode.parentElement.hidden=true;
+    const refresh=()=>{for(const b of actions.children)b.setAttribute('aria-pressed',String(b.dataset.mode===mode.value));};
+    for(const [value,label] of [['text','Текст'],['ink','Карандаш'],['highlight','Выделить'],['image','Изображение']]) {
+      const button=document.createElement('button');button.type='button';button.className='secondary';button.textContent=label;button.dataset.mode=value;
+      button.onclick=()=>{mode.value=value;mode.onchange();refresh();};actions.append(button);
+    }
+    refresh();
+  }
+}
 function clearDocuments() {
   for(const entry of visualCache.values()) void entry.viewer.dispose().catch(()=>{});
   visualCache.clear();pageStates.clear();activeFile=null;
@@ -156,6 +218,10 @@ function renderOptions() {
 function sync() {
   const locked=busy;
   input.disabled=locked;
+  $('workspace-tool').disabled=locked||preparing;
+  $('edit-actions').inert=locked;
+  $('document-tab').disabled=locked||preparing||!activeFile||!(/\.pdf$/i.test(activeFile.name));
+  $('pages-tab').disabled=locked||preparing||!pageManager;
   $('close').disabled=locked;
   $('cancel').disabled=locked;
   for(const button of $('files').querySelectorAll('button')) button.disabled=locked||button.dataset.boundary==='true';
@@ -248,7 +314,8 @@ async function changed() {
   const current=generation;
   const file=files.includes(activeFile)?activeFile:files[0];
   activeFile=file;fileList();
-  if(!file) {sync();return;}
+  toolNavigation();
+  if(!file) {workspaceView();sync();return;}
   preparing=true;
   sync();
   report('Открываем документ…');
@@ -285,7 +352,7 @@ async function changed() {
   } catch(error) {
     if(generation===current) report(errorText(error),true);
   } finally {
-    if(generation===current) {preparing=false;sync();}
+    if(generation===current) {preparing=false;workspaceView();sync();}
   }
 }
 function errorText(error) {
@@ -308,11 +375,11 @@ function addFiles(entries) {
   void changed();
   if(supported.length!==entries.length) report('Некоторые файлы пропущены из-за неподдерживаемого формата.');
 }
-function show(key,initial=[]) {
+function show(key,initial=[],preferred=0) {
   id=key;
   const [,,description,,icon,color]=toolMap.get(key);
   $('operation-title').textContent=toolMap.get(key)[1];
-  $('operation-description').textContent=description+' · Можно добавить несколько файлов. Кнопка «Открыть» переключает документ.';
+  $('operation-description').textContent=description;
   $('operation-icon').className='tool-icon '+color;
   drawIcon($('operation-icon'),icon);
   clearDocuments();
@@ -320,10 +387,13 @@ function show(key,initial=[]) {
   input.value='';
   input.accept=formats[id]||pdfOnly;
   input.multiple=true;
-  run.textContent=id==='merge'?'Объединить файлы':visual.has(id)?'Сохранить PDF':'Обработать открытый файл';
+  run.textContent=id==='merge'?'Объединить и скачать':visual.has(id)?'Сохранить PDF':'Применить и скачать';
   renderOptions();
+  workspaceMode=pageTools.has(id)||id==='merge'?'pages':'document';
+  toolNavigation();
+  if(!initial.length){$('workspace-sidebar').hidden=false;$('toggle-settings').setAttribute('aria-expanded','true');}
   if(!dialog.open) dialog.showModal();
-  if(initial.length) addFiles(initial);
+  if(initial.length) {activeFile=initial[preferred]||initial[0];addFiles(initial);}
   else void changed();
 }
 function close() {if(!busy) dialog.close();}
@@ -366,6 +436,10 @@ run.onclick=async()=>{
     link.textContent='Скачать '+result.name;
     status.className='downloads';
     status.append(link);
+    if(result.blob.type==='application/pdf') {
+      const next=document.createElement('button');next.type='button';next.className='secondary';next.textContent='Продолжить редактирование';
+      next.onclick=()=>{const file=new File([result.blob],result.name,{type:'application/pdf'});show('edit',[file]);};status.append(next);
+    }
   } catch(error) {report(errorText(error),true);}
   finally {busy=false;sync();}
 };
