@@ -1,3 +1,4 @@
+import {workerTask,yieldToUI} from './performance.js';
 const clamp=n=>Math.max(0,Math.min(255,Math.round(n)));
 export function adjustPixels(data,width,height,settings={}) {
   const brightness=Number(settings.brightness||0)*2.55;
@@ -34,11 +35,14 @@ export function adjustPixels(data,width,height,settings={}) {
   }
   return data;
 }
-export function adjustCanvas(canvas,settings) {
-  if(!settings)return canvas;
+export async function adjustCanvas(canvas,settings) {
+  if(!settings||(!Number(settings.brightness||0)&&!Number(settings.contrast||0)&&Number(settings.saturation??100)===100&&!Number(settings.warmth||0)&&!Number(settings.sharpness||0)&&(!settings.colorMode||settings.colorMode==='color')))return canvas;
   const ctx=canvas.getContext('2d',{willReadFrequently:true});
   const image=ctx.getImageData(0,0,canvas.width,canvas.height);
-  adjustPixels(image.data,canvas.width,canvas.height,settings);ctx.putImageData(image,0,0);return canvas;
+  const task=workerTask('image-worker.js',{buffer:image.data.buffer,width:canvas.width,height:canvas.height,settings},[image.data.buffer]);
+  if(task){const buffer=await task;ctx.putImageData(new ImageData(new Uint8ClampedArray(buffer),canvas.width,canvas.height),0,0);}
+  else{await yieldToUI();adjustPixels(image.data,canvas.width,canvas.height,settings);ctx.putImageData(image,0,0);}
+  return canvas;
 }
 export function renderDimensions(width,height,dpi) {
   if(!Number.isFinite(dpi)||dpi<72||dpi>600)throw Error('Выберите разрешение от 72 до 600 dpi.');
