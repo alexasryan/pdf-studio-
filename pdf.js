@@ -1,3 +1,4 @@
+import {adjustCanvas,renderDimensions,withDpi} from './image-adjustments.js';
 import * as pdfjs from './vendor/pdf.min.mjs';
 pdfjs.GlobalWorkerOptions.workerSrc = new URL('./vendor/pdf.worker.min.mjs', import.meta.url).href;
 const {PDFDocument, PDFName, degrees, StandardFonts, rgb} = window.PDFLib;
@@ -35,10 +36,10 @@ const fromPages = async (source, list) => {
   return result.save();
 };
 
-async function renderPage(doc,index,scale=1.5) {
+async function renderPage(doc,index,scale=1.5,exact=false) {
   const page=await doc.getPage(index+1);
   const unit=page.getViewport({scale:1});
-  const viewport=page.getViewport({scale:Math.min(scale, 4500/Math.max(unit.width,unit.height))});
+  const viewport=page.getViewport({scale:exact?renderDimensions(unit.width,unit.height,scale*72).scale:Math.min(scale, 4500/Math.max(unit.width,unit.height))});
   const canvas=canvasOf(viewport.width,viewport.height);
   await page.render({canvas,viewport}).promise;
   return {canvas,viewport,unit};
@@ -197,8 +198,10 @@ const photoZip = async (source,settings,id,report) => {
   const zip=new window.JSZip();
   for (const [position,index] of indexes.entries()) {
     report('Экспорт: '+(position+1)+' / '+indexes.length);
-    const {canvas}=await renderPage(source,index,Number(settings.scale));
-    const blob=await asBlob(canvas,mime,.92);
+    const dpi=Number(settings.dpi||Number(settings.scale||2)*72);
+    const {canvas}=await renderPage(source,index,dpi/72,true);
+    adjustCanvas(canvas,settings);
+    const blob=await withDpi(await asBlob(canvas,mime,Number(settings.jpegQuality||95)/100),dpi);
     canvas.width=0;
     if(indexes.length===1) return {blob,extension:id};
     zip.file('page-'+String(index+1).padStart(3,'0')+'.'+id,blob);
@@ -254,6 +257,23 @@ async function protect(file,password,mode) {
 }
 async function operate(id,files,s,report,visualData,prepared) {
   const file=files[0], name=base(file);
+  if(id==='color') {
+    const source=await open(file);
+    try {
+      const original=await load(file), result=await PDFDocument.create();
+      const selected=new Set(pageList(s.pages,source.numPages));
+      for(let i=0;i<source.numPages;i++) {
+        report('Цветокоррекция: '+(i+1)+' / '+source.numPages);
+        if(!selected.has(i)) {const [page]=await result.copyPages(original,[i]);result.addPage(page);continue;}
+        const {canvas,unit}=await renderPage(source,i,Number(s.dpi||150)/72,true);
+        adjustCanvas(canvas,s);
+        const image=await result.embedPng(await (await asBlob(canvas,'image/png')).arrayBuffer());canvas.width=0;
+        result.addPage([unit.width,unit.height]).drawImage(image,{x:0,y:0,width:unit.width,height:unit.height});
+      }
+      if(original.getTitle())result.setTitle(original.getTitle());
+      return output(name+'-color.pdf',await result.save());
+    }finally{await source.loadingTask.destroy();}
+  }
   if(id==='protect'||id==='unlock') return output(name+(id==='protect'?'-protected.pdf':'-unlocked.pdf'),await protect(file,s.password,id));
   if(id==='images') return output(name+'-images.pdf',await imagesPdf(files));
   if(id==='docx'||id==='textpdf') return output(name+'.pdf',await textPdf(await readText(file)));

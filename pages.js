@@ -1,3 +1,4 @@
+import {adjustCanvas} from './image-adjustments.js';
 import {open,renderPage,load,base} from './pdf.js';
 const {PDFDocument,degrees}=window.PDFLib;
 export const pageTools=new Set(['remove','extract','organize','rotate','split']);
@@ -29,7 +30,7 @@ export async function pageResult(file,state,kind) {
   const result=await transformPages(file,state,kind==='extract');
   return {name:base(file)+'-'+kind+'.pdf',blob:result};
 }
-export async function createPages(file,kind,host,previous,onchange,onerror) {
+export async function createPages(file,kind,host,previous,onchange,onerror,getAdjustments=()=>null) {
   const source=await open(file);
   const state=previous||{items:Array.from({length:source.numPages},(_,index)=>({index,angle:0,selected:kind!=='extract',breakAfter:kind==='split'}))};
   let disposed=false, version=0, observer, previewVersion=0, previewPosition=0, zoom=1;
@@ -67,14 +68,14 @@ export async function createPages(file,kind,host,previous,onchange,onerror) {
   }
   async function showPage(item) {
     if(!item)return;previewPosition=state.items.indexOf(item);const request=++previewVersion;preview.hidden=false;grid.hidden=true;previewTitle.textContent=(previewPosition+1)+' / '+state.items.length;previewBody.textContent='Загрузка…';
-    try {const {canvas}=await renderPage(source,item.index,1.3*zoom);if(disposed||request!==previewVersion)return;canvas.style.transform='rotate('+item.angle+'deg)';canvas.style.width=(zoom*100)+'%';canvas.style.maxWidth='none';previewBody.replaceChildren(canvas);preview.scrollIntoView({block:'nearest',behavior:'smooth'});}catch(e){if(!disposed)onerror(e.message,true);}
+    try {const {canvas}=await renderPage(source,item.index,1.3*zoom);if(disposed||request!==previewVersion)return;adjustCanvas(canvas,getAdjustments());canvas.style.transform='rotate('+item.angle+'deg)';canvas.style.width=(zoom*100)+'%';canvas.style.maxWidth='none';previewBody.replaceChildren(canvas);preview.scrollIntoView({block:'nearest',behavior:'smooth'});}catch(e){if(!disposed)onerror(e.message,true);}
   }
   function render() {
     const current=++version;observer?.disconnect();grid.replaceChildren();
     undo.disabled=!history.length;
     if(!preview.hidden)void showPage(state.items[Math.min(previewPosition,state.items.length-1)]);
     const selected=state.items.filter(p=>p.selected).length;
-    info.textContent=state.items.length+' стр. · Выбрано: '+selected+'. Нажмите на миниатюру для просмотра. Корзина удаляет страницу; стрелки меняют порядок.'+(kind==='split'?' Кнопка «Разрез после» задаёт границы частей.':kind==='extract'?' В результат попадут только выбранные страницы.':['crop','watermark','jpg','png','ocr'].includes(kind)?' Инструмент применяется к выбранным страницам.':' Выбор используется для группового поворота и удаления.');
+    info.textContent=state.items.length+' стр. · Выбрано: '+selected+'. Нажмите на миниатюру для просмотра. Корзина удаляет страницу; стрелки меняют порядок.'+(kind==='split'?' Кнопка «Разрез после» задаёт границы частей.':kind==='extract'?' В результат попадут только выбранные страницы.':['crop','watermark','jpg','png','ocr','color'].includes(kind)?' Инструмент применяется к выбранным страницам.':' Выбор используется для группового поворота и удаления.');
     observer=new IntersectionObserver(entries=>{for(const entry of entries)if(entry.isIntersecting){observer.unobserve(entry.target);const img=entry.target.querySelector('img');thumb(Number(entry.target.dataset.index)).then(url=>{if(!disposed&&current===version)img.src=url;}).catch(e=>{if(!disposed&&current===version)onerror(e.message,true);});}},{root:null,rootMargin:'250px'});
     state.items.forEach((item,position)=>{
       const card=document.createElement('article');card.className='page-card';card.dataset.index=item.index;
@@ -95,5 +96,5 @@ export async function createPages(file,kind,host,previous,onchange,onerror) {
     onchange(state);
   }
   render();
-  return {state,showDocument:()=>showPage(state.items[Math.min(previewPosition,state.items.length-1)]),showGrid:()=>{preview.hidden=true;grid.hidden=false;previewVersion++;},dispose:async()=>{disposed=true;version++;previewVersion++;observer.disconnect();await source.loadingTask.destroy();}};
+  return {state,refreshPreview:()=>{if(!preview.hidden)void showPage(state.items[previewPosition]);},showDocument:()=>showPage(state.items[Math.min(previewPosition,state.items.length-1)]),showGrid:()=>{preview.hidden=true;grid.hidden=false;previewVersion++;},dispose:async()=>{disposed=true;version++;previewVersion++;observer.disconnect();await source.loadingTask.destroy();}};
 }

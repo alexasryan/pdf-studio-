@@ -18,6 +18,8 @@ let filter=-1, id, files=[], viewer, prepared, generation=0, busy=false, prepari
 const fields=new Map();
 let activeFile=null, pageManager=null, workspaceMode='document';
 const pageStates=new Map(), visualCache=new Map();
+let adjustmentTimer;
+function refreshAdjustments(){clearTimeout(adjustmentTimer);adjustmentTimer=setTimeout(()=>pageManager?.refreshPreview?.(),160);}
 function workspaceView(mode=workspaceMode) {
   workspaceMode=mode;
   const hasDocument=Boolean(activeFile&&(/\.pdf$/i.test(activeFile.name)));
@@ -99,7 +101,7 @@ function theme(value) {
 }
 let stored;
 try {stored=localStorage.getItem('pdf-studio-theme');} catch {}
-theme(stored||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'));
+theme(stored||'light');
 $('theme').onclick=()=>{
   const next=document.documentElement.dataset.theme==='dark'?'light':'dark';
   theme(next);
@@ -168,11 +170,18 @@ function renderOptions() {
       field.type=type;
       if(type==='file') field.accept=value;
       else field.value=value;
-      if(type==='number') {field.min=minimum;field.max=maximum;field.required=true;}
+      if(type==='number'||type==='range') {field.min=minimum;field.max=maximum;field.step=1;field.required=true;}
+      if(type==='range') field.value=value;
       if(type==='password') {field.autocomplete='off';field.maxLength=127;}
       if(type==='text') {field.maxLength=key==='pages'||key==='ranges'?2000:500;}
     }
     wrapper.append(field);
+    if(['color','jpg','png'].includes(id)) {
+      const valueLabel=document.createElement('output');
+      if(type==='range'){valueLabel.textContent=field.value;wrapper.append(valueLabel);}
+      const update=()=>{if(type==='range')valueLabel.textContent=field.value;refreshAdjustments();};
+      field.addEventListener('input',update);field.addEventListener('change',update);
+    }
     if(key==='pages'||key==='ranges') wrapper.hidden=true;
     if(type==='text'&&minimum) {
       const hint=document.createElement('small');
@@ -203,6 +212,15 @@ function renderOptions() {
     refresh();
   }
   controls.append(panel);
+  if(['color','jpg','png'].includes(id)) {
+    const presets=document.createElement('div');presets.className='color-presets';
+    for(const [label,values] of [['Сбросить',{}],['Чёткий скан',{brightness:8,contrast:25,saturation:0,sharpness:35}],['Чёрно-белый',{colorMode:'bw',contrast:10}],['Тёплый',{warmth:30,saturation:110}]]) {
+      const button=document.createElement('button');button.type='button';button.className='secondary';button.textContent=label;
+      button.onclick=()=>{for(const [key,field] of fields)if(['brightness','contrast','saturation','warmth','sharpness','colorMode','threshold'].includes(key)){field.value=values[key]??({saturation:100,colorMode:'color',threshold:160}[key]??0);field.dispatchEvent(new Event('input'));}};
+      presets.append(button);
+    }
+    controls.prepend(presets);
+  }
   if(id==='crop') {
     const presets=document.createElement('div');presets.className='page-toolbar';
     for(const value of [0,10,20,40]) {const button=document.createElement('button');button.type='button';button.className='secondary';button.textContent=value===0?'Без полей':'Поля '+value+' пт';button.onclick=()=>{for(const key of ['left','top','right','bottom'])fields.get(key).value=value;};presets.append(button);}
@@ -323,7 +341,7 @@ async function changed() {
     const isPdf=/\.pdf$/i.test(file.name);
     if(isPdf&&id!=='unlock') {
       const host=document.createElement('div');
-      const manager=await createPages(file,id,host,pageStates.get(file),state=>pageStates.set(file,state),(message,error)=>{if(generation===current)report(message,error);});
+      const manager=await createPages(file,id,host,pageStates.get(file),state=>pageStates.set(file,state),(message,error)=>{if(generation===current)report(message,error);},()=>['color','jpg','png'].includes(id)?settings():null);
       if(generation!==current){await manager.dispose();return;}
       pageManager=manager;
       $('page-manager').replaceChildren(host);$('page-manager').hidden=false;
