@@ -8,15 +8,17 @@
 <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="motion.css">
 <link rel="stylesheet" href="design.css">
+<link rel="stylesheet" href="polish.css">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 </head>
 <body>
+<a class="skip-link" href="#main">Перейти к содержимому</a>
 <header class="top"><div class="shell nav">
 <a class="brand" href="#"><span class="brand-icon" data-icon="file-text"></span>PDF Studio</a>
 <nav><a href="#tools">Инструменты</a><a href="#privacy">Конфиденциальность</a></nav>
 <button class="theme secondary" id="theme" type="button" title="Переключить тему" aria-label="Переключить тему" data-icon="moon"></button>
 </div></header>
-<main class="shell">
+<main class="shell" id="main" tabindex="-1">
 <section class="hero">
 <div class="hero-copy"><span class="eyebrow"><i></i> ЛИЧНАЯ PDF-МАСТЕРСКАЯ</span>
 <h1>Ваши PDF.<br><em>В полном порядке.</em></h1>
@@ -29,17 +31,20 @@
 <div class="floating magic" data-icon="sparkles"></div><div class="floating check" data-icon="check"></div>
 </div>
 </section>
-<section class="drop" id="home-drop"><div class="upload-icon" data-icon="upload-cloud"></div><div class="drop-copy"><strong>Перетащите файлы сюда</strong><span>PDF, изображения, DOCX или текст</span></div><button class="primary" id="choose">Выбрать файлы</button></section>
-<section id="tools" class="catalog"><div class="catalog-head"><div><h2>Инструменты</h2><p id="tool-count"></p></div><label class="search"><span data-icon="search"></span><input id="search" type="search" placeholder="Найти инструмент" aria-label="Найти инструмент"></label></div>
-<div id="filters" class="filters"></div><div id="grid" class="grid"></div></section>
+<section class="drop" id="home-drop"><div class="upload-icon" data-icon="upload-cloud" aria-hidden="true"></div><div class="drop-copy"><strong>Начните с документа</strong><span>Перетащите PDF, изображения, DOCX или текст</span><small>Можно выбрать несколько файлов</small></div><button class="primary" id="choose">Выбрать файлы</button></section>
+<section class="quick-start" aria-labelledby="quick-title"><div class="section-heading"><div><h2 id="quick-title">С чего начнём?</h2><p>Основные задачи — в один клик</p></div><a class="text-link" href="#tools">Все инструменты</a></div><div id="quick-tools" class="quick-tools"></div></section>
+<section id="recent-section" class="recent-section" aria-labelledby="recent-title" hidden><div class="section-heading"><h2 id="recent-title">Недавно открывали</h2><button type="button" id="clear-recent" class="text-button">Очистить список</button></div><div id="recent-tools" class="recent-tools"></div></section>
+<section id="tools" class="catalog"><div class="catalog-head"><div><h2>Инструменты</h2><p id="tool-count" role="status" aria-live="polite" aria-atomic="true"></p></div><div class="search-box"><label class="search"><span data-icon="search" aria-hidden="true"></span><span class="search-caption">Поиск</span><input id="search" type="search" placeholder="Например, сжать PDF" autocomplete="off" aria-controls="grid" aria-keyshortcuts="Control+k Meta+k /"></label><kbd id="search-shortcut" aria-hidden="true">/</kbd><button id="clear-search" class="clear-search" type="button" aria-label="Сбросить поиск и фильтры" hidden><span data-icon="x" aria-hidden="true"></span></button></div></div>
+<div id="filters" class="filters" role="group" aria-label="Категории инструментов"></div><div id="grid" class="grid"></div></section>
+<section class="help-section" aria-labelledby="help-title"><div class="section-heading"><h2 id="help-title">Перед началом работы</h2></div><div class="help-grid"><details><summary>Куда попадают мои файлы?</summary><p>Обработка выполняется в вашем браузере. Документы не отправляются на сервер обработки. Список «Недавно открывали» хранит только названия инструментов — без имён и содержимого файлов.</p></details><details><summary>Как сохранить результат?</summary><p>Добавьте документ, выберите настройки и нажмите кнопку сохранения в редакторе. После обработки появится ссылка «Скачать». Исходный файл на вашем устройстве не перезаписывается.</p></details><details><summary>Сохранится ли оформление?</summary><p>Это зависит от инструмента. Конвертация PDF и Word переносит текст без исходной вёрстки. Сжатие с потерями превращает страницы в изображения. Особенности каждого действия описаны в настройках инструмента.</p></details></div></section>
 </main>
-<footer id="privacy"><div class="shell footer"><a class="brand" href="#"><span class="brand-icon" data-icon="file-text"></span>PDF Studio</a><span class="privacy"><span data-icon="shield-check"></span>Файлы обрабатываются на вашем устройстве</span><a href="#tools">К инструментам ↑</a></div></footer>
+<footer id="privacy"><div class="shell footer"><a class="brand" href="#"><span class="brand-icon" data-icon="file-text"></span>PDF Studio</a><span class="privacy"><span data-icon="shield-check" aria-hidden="true"></span>Файлы обрабатываются на вашем устройстве</span><a href="#tools">К инструментам</a></div></footer>
 <dialog id="workspace" aria-labelledby="operation-title"><div class="dialog-inner">
 <div class="dialog-head"><span id="operation-icon" class="tool-icon"></span><div><h2 id="operation-title"></h2><p id="operation-description"></p></div><button type="button" id="close" class="secondary" aria-label="Закрыть" data-icon="x"></button></div>
 <div class="workspace-toolbar">
 <div class="tool-switch"><label for="workspace-tool">Инструмент</label><select id="workspace-tool"></select></div>
 <div id="edit-actions" class="edit-actions" aria-label="Инструменты рисования" hidden></div>
-<button class="secondary" id="toggle-settings" type="button" aria-expanded="true">Настройки</button>
+<button class="secondary" id="toggle-settings" type="button" aria-expanded="true" aria-controls="workspace-sidebar">Настройки</button>
 </div>
 <div class="workspace-layout">
 <aside id="workspace-sidebar" class="workspace-sidebar">
@@ -47,21 +52,21 @@
 <section class="sidebar-section"><h3>Настройки инструмента</h3><div id="options"></div></section>
 <p class="hint">Документы обрабатываются на вашем устройстве.</p>
 </aside>
-<div class="workspace-main">
+<div class="workspace-main" id="workspace-main">
 <div class="document-tabs" role="tablist" aria-label="Режим просмотра">
-<button id="document-tab" role="tab" class="secondary" type="button">Документ</button>
-<button id="pages-tab" role="tab" class="secondary" type="button">Все страницы</button>
+<button id="document-tab" aria-controls="document-content" role="tab" class="secondary" type="button">Документ</button>
+<button id="pages-tab" aria-controls="document-content" role="tab" class="secondary" type="button">Все страницы</button>
 <span id="active-document" class="active-document"></span>
 </div>
-<div class="document-surface"><div id="workspace-empty" class="workspace-empty"><span data-icon="file-up"></span><h3>Добавьте документ</h3><p>Загрузите файлы слева, чтобы увидеть страницы и начать работу.</p></div><div id="page-manager" hidden></div><div id="stage" hidden></div></div>
+<div class="document-surface" id="document-content" role="tabpanel" aria-labelledby="document-tab"><div id="workspace-loading" class="workspace-loading" hidden><span class="loading-ring" aria-hidden="true"></span><strong>Открываем документ</strong><span>Подготавливаем страницы для работы</span></div><div id="workspace-empty" class="workspace-empty"><span data-icon="file-up"></span><h3>Добавьте документ</h3><p>Нажмите «Добавить файлы» или перетащите документ в область загрузки.</p><button type="button" class="secondary" id="workspace-add">Добавить файлы</button></div><div id="page-manager" hidden></div><div id="stage" hidden></div></div>
 </div>
 </div>
 <div id="status" role="status" aria-live="polite"></div>
-<div class="dialog-foot"><span id="workspace-progress">1. Загрузите → 2. Измените → 3. Скачайте</span><button class="secondary" id="cancel">Закрыть</button><button class="primary" id="run">Применить и скачать</button></div>
+<div class="dialog-foot"><span id="workspace-progress">1. Загрузите → 2. Измените → 3. Скачайте</span><button class="secondary" id="cancel">Закрыть</button><button class="primary" id="run" aria-describedby="workspace-progress">Применить и скачать</button></div>
 </div></dialog>
 <input id="quick-input" type="file" accept=".pdf,image/jpeg,image/png,image/webp,.docx,.txt,.csv,.md,.html,.htm" multiple hidden>
 <script src="vendor/pdf-lib.min.js"></script>
-<script type="module" src="app.js"></script>
-<script defer src="motion.js"></script>
+<script type="module" src="app.js?v=ux-20261119"></script>
+<script defer src="motion.js?v=ux-20261119"></script>
 </body>
 </html>
