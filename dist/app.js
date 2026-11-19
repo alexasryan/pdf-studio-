@@ -1,3 +1,4 @@
+import {initExperience,matchesTool} from './experience.js';
 import {createPages,transformPages,pageResult,pageTools} from './pages.js';
 import {categories,tools,formats,many,visual,schemas,hints,pdfOnly} from './tools.js';
 import {formData,load,operate} from './pdf.js';
@@ -114,17 +115,19 @@ for(const [index,label] of ['Все инструменты',...categories].entri
   $('filters').append(button);
 }
 function renderCatalog() {
-  [...$('filters').children].forEach((button,i)=>button.setAttribute('aria-pressed',String(i-1===filter)));
+  [...$('filters').querySelectorAll('button')].forEach((button,i)=>button.setAttribute('aria-pressed',String(i-1===filter)));
   const query=$('search').value.trim().toLowerCase();
-  const matches=tools.filter(([,title,desc,category])=>(filter===-1||filter===category)&&
-    query.split(/\s+/).every(word=>(title+' '+desc).toLowerCase().includes(word)));
+  const matches=tools.filter(([key,title,desc,category])=>(filter===-1||filter===category)&&
+    matchesTool([key,title,desc],query));
   $('tool-count').textContent=query||filter!==-1?'Найдено '+matches.length+' из '+tools.length:tools.length+' способов работать с PDF';
   const cards=matches.map(([key,title,desc,,icon,color])=>{
     const button=document.createElement('button');
     button.className='card';
+    button.dataset.tool=key;
     button.innerHTML='<span class="tool-icon"></span><strong></strong><small></small><span aria-hidden="true" class="arrow"></span>';
     const [badge,heading,caption,arrow]=button.children;
     badge.classList.add(color);
+    badge.setAttribute('aria-hidden','true');
     drawIcon(badge,icon);
     drawIcon(arrow,'arrow-up-right');
     heading.textContent=title;
@@ -135,13 +138,19 @@ function renderCatalog() {
   if(!cards.length) {
     const empty=document.createElement('div');
     empty.className='empty';
-    empty.textContent='Инструмент не найден.';
+    const title=document.createElement('h3');title.textContent='Не нашли подходящий инструмент';
+    const help=document.createElement('p');help.textContent='Попробуйте «подпись», «уменьшить PDF» или откройте весь каталог.';
+    const reset=document.createElement('button');reset.type='button';reset.className='secondary';reset.textContent='Показать все инструменты';
+    reset.onclick=()=>{resetCatalog();$('search').focus();};
+    empty.append(title,help,reset);
     cards.push(empty);
   }
   $('grid').replaceChildren(...cards);
 }
-$('search').oninput=renderCatalog;
+function resetCatalog(){filter=-1;$('search').value='';renderCatalog();experience.catalog();}
+$('search').oninput=()=>{renderCatalog();experience.catalog();};
 renderCatalog();
+const experience=$('quick-tools')?initExperience({tools,icons,openTool:key=>show(key),resetSearch:resetCatalog}):{remember(){},catalog(){},sync(){}};
 
 function report(message,error=false) {
   status.className=error?'error':'';
@@ -253,6 +262,7 @@ function sync() {
   run.hidden=id==='view';
   run.disabled=busy||preparing||!files.length||
     (id==='merge'&&files.length<2)||(visual.has(id)&&!viewer)||(id==='form'&&!prepared?.fields.length);
+  experience.sync({busy,preparing,hasFiles:Boolean(files.length),toolId:id,canRun:!run.disabled});
 }
 function sizeText(size) {
   if(size<1024) return size+' Б';
@@ -418,6 +428,7 @@ function show(key,initial=[],preferred=0) {
   toolNavigation();
   if(!initial.length){$('workspace-sidebar').hidden=false;$('toggle-settings').setAttribute('aria-expanded','true');}
   if(!dialog.open) dialog.showModal();
+  experience.remember(key);
   if(initial.length) {activeFile=initial[preferred]||initial[0];addFiles(initial);}
   else void changed();
 }
