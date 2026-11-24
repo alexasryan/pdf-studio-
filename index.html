@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="description" content="Личная мастерская для работы с PDF прямо в браузере">
 <title>PDF Studio — личная мастерская</title>
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=conversion-20261124">
 <link rel="stylesheet" href="motion.css">
 <link rel="stylesheet" href="design.css">
 <link rel="stylesheet" href="polish.css">
@@ -36,7 +36,7 @@
 <section id="recent-section" class="recent-section" aria-labelledby="recent-title" hidden><div class="section-heading"><h2 id="recent-title">Недавно открывали</h2><button type="button" id="clear-recent" class="text-button">Очистить список</button></div><div id="recent-tools" class="recent-tools"></div></section>
 <section id="tools" class="catalog"><div class="catalog-head"><div><h2>Инструменты</h2><p id="tool-count" role="status" aria-live="polite" aria-atomic="true"></p></div><div class="search-box"><label class="search"><span data-icon="search" aria-hidden="true"></span><span class="search-caption">Поиск</span><input id="search" type="search" placeholder="Например, сжать PDF" autocomplete="off" aria-controls="grid" aria-keyshortcuts="Control+k Meta+k /"></label><kbd id="search-shortcut" aria-hidden="true">/</kbd><button id="clear-search" class="clear-search" type="button" aria-label="Сбросить поиск и фильтры" hidden><span data-icon="x" aria-hidden="true"></span></button></div></div>
 <div id="filters" class="filters" role="group" aria-label="Категории инструментов"></div><div id="grid" class="grid"></div></section>
-<section class="help-section" aria-labelledby="help-title"><div class="section-heading"><h2 id="help-title">Перед началом работы</h2></div><div class="help-grid"><details><summary>Куда попадают мои файлы?</summary><p>Обработка выполняется в вашем браузере. Документы не отправляются на сервер обработки. Список «Недавно открывали» хранит только названия инструментов — без имён и содержимого файлов.</p></details><details><summary>Как сохранить результат?</summary><p>Добавьте документ, выберите настройки и нажмите кнопку сохранения в редакторе. После обработки появится ссылка «Скачать». Исходный файл на вашем устройстве не перезаписывается.</p></details><details><summary>Сохранится ли оформление?</summary><p>Это зависит от инструмента. Конвертация PDF и Word переносит текст без исходной вёрстки. Сжатие с потерями превращает страницы в изображения. Особенности каждого действия описаны в настройках инструмента.</p></details></div></section>
+<section class="help-section" aria-labelledby="help-title"><div class="section-heading"><h2 id="help-title">Перед началом работы</h2></div><div class="help-grid"><details><summary>Куда попадают мои файлы?</summary><p>Обработка выполняется в вашем браузере. Документы не отправляются на сервер обработки. Список «Недавно открывали» хранит только названия инструментов — без имён и содержимого файлов.</p></details><details><summary>Как сохранить результат?</summary><p>Добавьте документ, выберите настройки и нажмите кнопку сохранения в редакторе. После обработки появится ссылка «Скачать». Исходный файл на вашем устройстве не перезаписывается.</p></details><details><summary>Сохранится ли оформление?</summary><p>Это зависит от инструмента. DOCX → PDF сохраняет оформление предпросмотра как изображения страниц; для PDF с выделяемым текстом есть кнопка печати. Сложная вёрстка и отсутствующие шрифты могут отличаться от Word. PDF → Word переносит текст без исходной вёрстки. Сжатие с потерями превращает страницы в изображения. Особенности каждого действия описаны в настройках инструмента.</p></details></div></section>
 </main>
 <footer id="privacy"><div class="shell footer"><a class="brand" href="#"><span class="brand-icon" data-icon="file-text"></span>PDF Studio</a><span class="privacy"><span data-icon="shield-check" aria-hidden="true"></span>Файлы обрабатываются на вашем устройстве</span><a href="#tools">К инструментам</a></div></footer>
 <dialog id="workspace" aria-labelledby="operation-title"><div class="dialog-inner">
@@ -66,7 +66,7 @@
 </div></dialog>
 <input id="quick-input" type="file" accept=".pdf,image/jpeg,image/png,image/webp,.docx,.txt,.csv,.md,.html,.htm" multiple hidden>
 <script src="vendor/pdf-lib.min.js"></script>
-<script type="module" src="app.js?v=ux-20261119"></script>
+<script type="module" src="app.js?v=conversion-20261124"></script>
 <script defer src="motion.js?v=ux-20261119"></script>
 </body>
 </html>
