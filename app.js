@@ -1,3 +1,4 @@
+import {getProfile,initPerformanceControl} from './device-profile.js';
 import {initExperience,matchesTool} from './experience.js';
 import {createSourcePreview,sourceKind} from './source-preview.js';
 import {createPages,transformPages,pageResult,pageTools} from './pages.js';
@@ -18,10 +19,11 @@ document.querySelectorAll('[data-icon]').forEach(el=>drawIcon(el,el.dataset.icon
 const toolMap=new Map(tools.map(tool=>[tool[0],tool]));
 let filter=-1, id, files=[], viewer, prepared, generation=0, busy=false, preparing=false, download;
 const fields=new Map();
+initPerformanceControl();
 let activeFile=null, pageManager=null, sourcePreview=null, workspaceMode='document';
 const pageStates=new Map(), visualCache=new Map();
 let adjustmentTimer;
-function refreshAdjustments(){clearTimeout(adjustmentTimer);adjustmentTimer=setTimeout(()=>pageManager?.refreshPreview?.(),160);}
+function refreshAdjustments(){clearTimeout(adjustmentTimer);adjustmentTimer=setTimeout(()=>pageManager?.refreshPreview?.(),getProfile().previewDebounce);}
 function workspaceView(mode=workspaceMode) {
   workspaceMode=mode;
   const hasDocument=Boolean(activeFile&&(sourceKind(activeFile)||/\.pdf$/i.test(activeFile.name)));

@@ -1,10 +1,11 @@
+import {getProfile} from './device-profile.js';
 import {ensureScript} from './assets.js';
 import {convertFormatted} from './source-preview.js';
 import {resizeDocument} from './resize.js';
 import {workerTask,yieldToUI} from './performance.js';
 import {adjustCanvas,renderDimensions,withDpi} from './image-adjustments.js';
-import * as pdfjs from './vendor/pdf.min.mjs';
-pdfjs.GlobalWorkerOptions.workerSrc = new URL('./vendor/pdf.worker.min.mjs', import.meta.url).href;
+let enginePromise;
+function pdfEngine(){return enginePromise??=import('./vendor/pdf.min.mjs').then(api=>{api.GlobalWorkerOptions.workerSrc=new URL('./vendor/pdf.worker.min.mjs',import.meta.url).href;return api;}).catch(error=>{enginePromise=null;throw error;});}
 const {PDFDocument, PDFName, degrees, StandardFonts, rgb} = window.PDFLib;
 const vendor = new URL('./vendor/', import.meta.url).href;
 const read = file => file.arrayBuffer();
@@ -13,12 +14,12 @@ const base = file => file.name.replace(/\.[^.]+$/, '');
 const output = (name, bytes, type='application/pdf') => ({name, blob:new Blob([bytes], {type})});
 const load = async file => PDFDocument.load(await read(file), {updateMetadata:false});
 let sharedPdfWorker;
-const sharedWorker=()=>{if(typeof pdfjs.PDFWorker!=='function')return undefined;if(!sharedPdfWorker||sharedPdfWorker.destroyed)sharedPdfWorker=new pdfjs.PDFWorker();return sharedPdfWorker;};
-const open = async file => pdfjs.getDocument({
-  worker:sharedWorker(),
+const sharedWorker=pdfjs=>{if(typeof pdfjs.PDFWorker!=='function')return undefined;if(!sharedPdfWorker||sharedPdfWorker.destroyed)sharedPdfWorker=new pdfjs.PDFWorker();return sharedPdfWorker;};
+const open = async file => {const pdfjs=await pdfEngine();return pdfjs.getDocument({
+  worker:sharedWorker(pdfjs),
   data:await read(file), cMapUrl:vendor+'cmaps/', cMapPacked:true, standardFontDataUrl:vendor+'standard_fonts/',
   wasmUrl:vendor+'wasm/', iccUrl:vendor+'iccs/', isEvalSupported:false,
-}).promise;
+}).promise;};
 
 const previewSources=new WeakMap();
 async function acquire(file) {
@@ -28,7 +29,7 @@ async function acquire(file) {
   let doc;
   try{doc=await entry.promise;}catch(error){entry.refs--;throw error;}
   let released=false;
-  return {doc,release:()=>{if(released)return;released=true;entry.refs--;if(!entry.refs)entry.timer=setTimeout(()=>{if(!entry.refs){previewSources.delete(file);void doc.loadingTask.destroy().catch(()=>{});}},800);}};
+  return {doc,release:()=>{if(released)return;released=true;entry.refs--;if(!entry.refs)entry.timer=setTimeout(()=>{if(!entry.refs){previewSources.delete(file);void doc.loadingTask.destroy().catch(()=>{});}},getProfile().documentIdle);}};
 }
 
 
@@ -55,14 +56,15 @@ const fromPages = async (source, list) => {
   return result.save();
 };
 
-async function renderPage(doc,index,scale=1.5,exact=false) {
+async function renderPage(doc,index,scale=1.5,exact=false,preview=false) {
   const page=await doc.getPage(index+1);
   const unit=page.getViewport({scale:1});
-  const viewport=page.getViewport({scale:exact?renderDimensions(unit.width,unit.height,scale*72).scale:Math.min(scale, 4500/Math.max(unit.width,unit.height))});
+  const viewport=page.getViewport({scale:exact?renderDimensions(unit.width,unit.height,scale*72).scale:Math.min(scale, (preview?getProfile().previewMaxSide:4500)/Math.max(unit.width,unit.height))});
   const canvas=canvasOf(viewport.width,viewport.height);
   await page.render({canvas,viewport}).promise;
   return {canvas,viewport,unit};
 }
+const renderPreviewPage=(doc,index,scale=getProfile().previewScale)=>renderPage(doc,index,scale,false,true);
 const asBlob = (canvas,type,quality) => new Promise((resolve,reject)=>canvas.toBlob(blob=>blob?resolve(blob):reject(Error('Не удалось обработать изображение.')),type,quality));
 
 async function rasterPdf(source, indexes, scale, quality, report, paint) {
@@ -406,4 +408,4 @@ async function operate(id,files,s,report,visualData,prepared,sourcePreview=null)
   if(id==='compress'&&bytes.length>=file.size) return {name:file.name,blob:file,note:'Пересохранение без потерь не уменьшило этот PDF. Можно скачать оригинал.'};
   return output(name+'-'+(id==='compress'?'compressed':id)+'.pdf',bytes);
 }
-export {ensureScript,acquire,asBlob,base,canvasOf,formData,imageBitmap,load,open,operate,output,pageList,rasterPdf,renderPage,stamp};
+export {renderPreviewPage,ensureScript,acquire,asBlob,base,canvasOf,formData,imageBitmap,load,open,operate,output,pageList,rasterPdf,renderPage,stamp};

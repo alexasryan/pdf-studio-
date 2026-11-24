@@ -1,4 +1,5 @@
-import {acquire,asBlob,base,canvasOf,imageBitmap,load,open,output,rasterPdf,renderPage,stamp} from './pdf.js';
+import {getProfile} from './device-profile.js';
+import {acquire,asBlob,base,canvasOf,imageBitmap,load,open,output,rasterPdf,renderPreviewPage as renderPage,stamp} from './pdf.js';
 const {degrees}=window.PDFLib;
 function paint(canvas,marks) {
   const ctx=canvas.getContext('2d');
@@ -28,10 +29,16 @@ function paint(canvas,marks) {
   }
 }
 export async function createViewer(file,kind,stage,settings,report) {
-  const lease=await acquire(file);
-  const source=lease.doc;
+  let lease=await acquire(file),source=lease.doc,resourcePromise=null,suspended=false;
+  const total=source.numPages;
   let index=0, snapshot, current, draft, disposed=false, generation=0;
   const marks=new Map();
+  const releaseSource=()=>{lease?.release();lease=null;source=null;};
+  const documentForUse=async()=>{
+    if(source)return source;
+    if(!resourcePromise)resourcePromise=acquire(file).then(entry=>{if(disposed){entry.release();throw Error('Документ закрыт.');}lease=entry;source=entry.doc;return source;}).finally(()=>{resourcePromise=null;});
+    return resourcePromise;
+  };
   const controls=document.createElement('div');
   controls.className='viewer-controls';
   const button=(label,action)=>{
@@ -71,7 +78,7 @@ export async function createViewer(file,kind,stage,settings,report) {
   }
   async function turn(delta) {
     const target=index+delta;
-    if(target<0||target>=source.numPages||disposed) return;
+    if(target<0||target>=total||disposed) return;
     const turnId=++generation;
     previous.disabled=true;
     next.disabled=true;
@@ -79,7 +86,9 @@ export async function createViewer(file,kind,stage,settings,report) {
     overlay.style.pointerEvents='none';
     draft=null;
     try {
-      const result=await renderPage(source,target,1.35);
+      const doc=await documentForUse();
+      if(disposed||turnId!==generation){if(suspended)releaseSource();return;}
+      const result=await renderPage(doc,target,getProfile().previewScale);
       if(disposed||turnId!==generation){result.canvas.width=0;return;}
       if(snapshot)snapshot.canvas.width=0;
       snapshot=result;
@@ -88,14 +97,14 @@ export async function createViewer(file,kind,stage,settings,report) {
       overlay.height=snapshot.canvas.height;
       pageWrap.replaceChildren(snapshot.canvas);
       if(kind!=='view') pageWrap.append(overlay);
-      counter.textContent=(index+1)+' / '+source.numPages;
+      counter.textContent=(index+1)+' / '+total;
       redraw();
     } catch(error) {
       if(!disposed) report(error.message,true);
     } finally {
       if(!disposed&&generation===turnId) {
         previous.disabled=index===0;
-        next.disabled=index>=source.numPages-1;
+        next.disabled=index>=total-1;
         overlay.style.pointerEvents='';
       }
     }
@@ -159,27 +168,28 @@ export async function createViewer(file,kind,stage,settings,report) {
   stage.hidden=false;
   await turn(0);
   return {
-    suspend:()=>{generation++;cancelAnimationFrame(paintFrame);paintFrame=0;if(snapshot)snapshot.canvas.width=0;snapshot=null;overlay.width=0;pageWrap.replaceChildren();void source.cleanup().catch(()=>{});},
-    resume:async()=>{if(!snapshot&&!disposed)await turn(0);},
+    suspend:()=>{suspended=true;generation++;cancelAnimationFrame(paintFrame);paintFrame=0;if(snapshot)snapshot.canvas.width=0;snapshot=null;overlay.width=0;pageWrap.replaceChildren();if(source)void source.cleanup().catch(()=>{});releaseSource();},
+    resume:async()=>{suspended=false;if(!snapshot&&!disposed)await turn(0);},
     dispose:async()=>{
       disposed=true;
       cancelAnimationFrame(paintFrame);
       for(const entries of marks.values()) for(const mark of entries) mark.bitmap?.close?.();
-      lease.release();
+      releaseSource();
       if(snapshot)snapshot.canvas.width=0;overlay.width=0;
     },
     export:async(id,progress)=>{
       if(![...marks.values()].some(entries=>entries.length)) return {name:base(file)+'-edited.pdf',blob:file};
+      const sourceDoc=await documentForUse();
       if(id==='redact') {
-        const indexes=Array.from({length:source.numPages},(_,i)=>i);
-        const bytes=await rasterPdf(source,indexes,2,.95,progress,(i,canvas)=>paint(canvas,marks.get(i)||[]));
+        const indexes=Array.from({length:total},(_,i)=>i);
+        const bytes=await rasterPdf(sourceDoc,indexes,2,.95,progress,(i,canvas)=>paint(canvas,marks.get(i)||[]));
         return output(base(file)+'-redacted.pdf',bytes);
       }
       const doc=await load(file);
       for(const [pageIndex,entries] of marks) {
         if(!entries.length) continue;
         progress('Сохранение страницы '+(pageIndex+1));
-        const page=await source.getPage(pageIndex+1), unit=page.getViewport({scale:1});
+        const page=await sourceDoc.getPage(pageIndex+1), unit=page.getViewport({scale:1});
         const layer=canvasOf(unit.width*2,unit.height*2);
         paint(layer,entries);
         const image=await doc.embedPng(await (await asBlob(layer,'image/png')).arrayBuffer());

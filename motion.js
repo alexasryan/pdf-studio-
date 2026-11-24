@@ -4,6 +4,7 @@
  * No document operations, file handlers, application state or theme storage are changed.
  */
 (() => {
+  if(document.documentElement.dataset.performance==='lite')return;
   const reduce = matchMedia('(prefers-reduced-motion: reduce)');
   const fine = matchMedia('(hover: hover) and (pointer: fine)');
   const presets = {soft:[260,24],pop:[520,16],fade:[420,32],magnet:[170,13],drop:[380,16],lead:[620,40],trail:[170,19]};
