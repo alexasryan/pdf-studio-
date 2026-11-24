@@ -81,13 +81,13 @@ function splitTable(table,limit,pageTop) {
   const body=table.ownerDocument.createElement('tbody');for(const row of rows.slice(index))body.append(row);next.append(body);return next;
 }
 export async function paginateFlow(root) {
-  const originals=[...root.querySelectorAll('section.docx,section.import-page')];
+  const originals=[...root.querySelectorAll(':scope > .docx-wrapper > section.docx,:scope > section.import-page')];
   for(const original of originals) {
     const {height,paddingBottom}=pageGeometry(original),limit=height-paddingBottom;
     const articles=[...original.children].filter(el=>el.tagName==='ARTICLE');
     if(!articles.length)continue;
-    const footer=[...original.children].filter(el=>['FOOTER','OL'].includes(el.tagName));
-    for(const el of footer)el.remove();
+    const footer=[...original.children].filter(el=>el.tagName==='FOOTER'),notes=[...original.children].filter(el=>el.tagName==='OL');
+    for(const el of [...footer,...notes])el.remove();
     let page=original,article=null,pageTop=page.getBoundingClientRect().top,hasContent=false;
     const advance=template=>{for(const el of footer)page.append(el.cloneNode(true));const next=pageShell(root.ownerDocument,original);page.after(next);page=next;pageTop=page.getBoundingClientRect().top;article=template.cloneNode(false);page.append(article);hasContent=false;};
     for(const source of articles){const children=[...source.childNodes];source.replaceChildren();article=source;
@@ -107,11 +107,12 @@ export async function paginateFlow(root) {
         hasContent=true;
       }
     }
+    for(const el of notes)page.append(el);
     for(const el of footer)page.append(el.cloneNode(true));
     await yieldToUI();
   }
   // Never silently crop an unusually tall unsplittable object: export it in slices.
-  return [...root.querySelectorAll('section.docx,section.import-page')];
+  return [...root.querySelectorAll(':scope > .docx-wrapper > section.docx,:scope > section.import-page')];
 }
 async function settleAssets(doc) {
   await doc.fonts?.ready;
