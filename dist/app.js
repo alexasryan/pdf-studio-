@@ -1,4 +1,5 @@
 import {initExperience,matchesTool} from './experience.js';
+import {createSourcePreview,sourceKind} from './source-preview.js';
 import {createPages,transformPages,pageResult,pageTools} from './pages.js';
 import {categories,tools,formats,many,visual,schemas,hints,pdfOnly} from './tools.js';
 import {formData,load,operate} from './pdf.js';
@@ -17,13 +18,13 @@ document.querySelectorAll('[data-icon]').forEach(el=>drawIcon(el,el.dataset.icon
 const toolMap=new Map(tools.map(tool=>[tool[0],tool]));
 let filter=-1, id, files=[], viewer, prepared, generation=0, busy=false, preparing=false, download;
 const fields=new Map();
-let activeFile=null, pageManager=null, workspaceMode='document';
+let activeFile=null, pageManager=null, sourcePreview=null, workspaceMode='document';
 const pageStates=new Map(), visualCache=new Map();
 let adjustmentTimer;
 function refreshAdjustments(){clearTimeout(adjustmentTimer);adjustmentTimer=setTimeout(()=>pageManager?.refreshPreview?.(),160);}
 function workspaceView(mode=workspaceMode) {
   workspaceMode=mode;
-  const hasDocument=Boolean(activeFile&&(/\.pdf$/i.test(activeFile.name)));
+  const hasDocument=Boolean(activeFile&&(sourceKind(activeFile)||/\.pdf$/i.test(activeFile.name)));
   $('workspace-empty').hidden=Boolean(files.length);
   $('active-document').textContent=activeFile?.name||'';
   $('document-tab').disabled=!hasDocument||preparing;
@@ -32,6 +33,8 @@ function workspaceView(mode=workspaceMode) {
   $('pages-tab').setAttribute('aria-selected',String(mode==='pages'));
   if(mode==='pages') {
     stage.hidden=true;$('page-manager').hidden=!pageManager;pageManager?.showGrid();
+  } else if(sourcePreview) {
+    stage.hidden=false;$('page-manager').hidden=true;
   } else if(visual.has(id)&&viewer) {
     stage.hidden=false;$('page-manager').hidden=true;
   } else {
@@ -251,7 +254,7 @@ function sync() {
   input.disabled=locked;
   $('workspace-tool').disabled=locked||preparing;
   $('edit-actions').inert=locked;
-  $('document-tab').disabled=locked||preparing||!activeFile||!(/\.pdf$/i.test(activeFile.name));
+  $('document-tab').disabled=locked||preparing||!activeFile||!(sourceKind(activeFile)||/\.pdf$/i.test(activeFile.name));
   $('pages-tab').disabled=locked||preparing||!pageManager;
   $('close').disabled=locked;
   $('cancel').disabled=locked;
@@ -300,6 +303,7 @@ function fileList() {
 }
 function resetStage() {
   generation++;
+  sourcePreview?.dispose();sourcePreview=null;
   viewer?.suspend?.();
   if(pageManager) void pageManager.dispose().catch(()=>{});
   pageManager=null;
@@ -361,7 +365,11 @@ async function changed() {
       pageManager=manager;
       $('page-manager').replaceChildren(host);$('page-manager').hidden=false;
     }
-    if(visual.has(id)) {
+    if(!isPdf&&sourceKind(file)) {
+      const host=document.createElement('div');stage.replaceChildren(host);stage.hidden=false;
+      const ready=await createSourcePreview(file,host,(message,error)=>{if(generation===current)report(message,error);},()=>generation===current);
+      if(generation!==current){ready.dispose();return;}sourcePreview=ready;report('');
+    } else if(visual.has(id)) {
       const cached=visualCache.get(file);
       const host=cached?.host||document.createElement('div');
       const ready=cached?.viewer||await createViewer(file,id,host,settings,(message,error)=>{if(file===activeFile) report(message,error);});
@@ -457,11 +465,11 @@ run.onclick=async()=>{
       for(const entry of files) entries.push(pageStates.has(entry)?await transformPages(entry,pageStates.get(entry)):entry);
       result=await operate(id,entries,settings(),report);
     } else if(state&&(visual.has(id)||['form','metadata'].includes(id))) {
-      result=await operate(id,[file],pageSettings(file),report,viewer,prepared);
+      result=await operate(id,[file],pageSettings(file),report,viewer,prepared,sourcePreview);
       if(result.blob.type==='application/pdf') result.blob=await transformPages(new File([result.blob],result.name,{type:'application/pdf'}),state);
     } else {
       const entry=state?await transformPages(file,state):file;
-      result=await operate(id,id==='images'?files:[entry],pageSettings(file),report,viewer,prepared);
+      result=await operate(id,id==='images'?files:[entry],pageSettings(file),report,viewer,prepared,sourcePreview);
     }
     const message=result.note||(id==='compress'?'Готово. '+sizeText(activeFile.size)+' → '+sizeText(result.blob.size)+'.':'Готово · '+sizeText(result.blob.size));
     report(message);

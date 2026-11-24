@@ -1,3 +1,5 @@
+import {ensureScript} from './assets.js';
+import {convertFormatted} from './source-preview.js';
 import {resizeDocument} from './resize.js';
 import {workerTask,yieldToUI} from './performance.js';
 import {adjustCanvas,renderDimensions,withDpi} from './image-adjustments.js';
@@ -29,12 +31,6 @@ async function acquire(file) {
   return {doc,release:()=>{if(released)return;released=true;entry.refs--;if(!entry.refs)entry.timer=setTimeout(()=>{if(!entry.refs){previewSources.delete(file);void doc.loadingTask.destroy().catch(()=>{});}},800);}};
 }
 
-const scriptLoads=new Map();
-function ensureScript(name,globalName) {
-  if(window[globalName])return Promise.resolve();
-  if(!scriptLoads.has(name))scriptLoads.set(name,new Promise((resolve,reject)=>{const script=document.createElement('script');script.src=vendor+name;script.onload=resolve;script.onerror=()=>{script.remove();scriptLoads.delete(name);reject(Error('Не удалось загрузить компонент. Проверьте подключение.'));};document.head.append(script);}));
-  return scriptLoads.get(name);
-}
 
 function pageList(value, count, required=false, unique=true) {
   value = value.trim();
@@ -282,7 +278,7 @@ async function protect(file,password,mode) {
     });
   } finally {worker.terminate();}
 }
-async function operate(id,files,s,report,visualData,prepared) {
+async function operate(id,files,s,report,visualData,prepared,sourcePreview=null) {
   const file=files[0], name=base(file);
   if(id==='resize') {
     if(typeof Worker!=='undefined'){const bytes=await file.arrayBuffer();return {name:name+'-'+(s.paperFormat||'A4')+'.pdf',blob:await workerTask('pdf-operations-worker.js',{kind:'resize',bytes,settings:s},[bytes],report)};}
@@ -308,7 +304,8 @@ async function operate(id,files,s,report,visualData,prepared) {
   }
   if(id==='protect'||id==='unlock') return output(name+(id==='protect'?'-protected.pdf':'-unlocked.pdf'),await protect(file,s.password,id));
   if(id==='images') return output(name+'-images.pdf',await imagesPdf(files));
-  if(id==='docx'||id==='textpdf') return output(name+'.pdf',await textPdf(await readText(file)));
+  if(id==='docx'||id==='textpdf'&&!/\.txt$/i.test(file.name))return convertFormatted(file,s,report,sourcePreview);
+  if(id==='textpdf')return output(name+'.pdf',await textPdf(await readText(file)));
   if(id==='merge') {
     if(typeof Worker!=='undefined')return {name:name+'-merged.pdf',blob:await workerTask('pdf-operations-worker.js',{kind:'merge',files},[],report)};
     const result=await PDFDocument.create();

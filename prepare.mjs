@@ -16,6 +16,9 @@ const targets={
   'jszip/dist/jszip.min.js':'jszip.min.js',
   'docx/dist/index.iife.js':'docx.js',
   'mammoth/mammoth.browser.min.js':'mammoth.browser.min.js',
+  'html2canvas/dist/html2canvas.min.js':'html2canvas.min.js',
+  'dompurify/dist/purify.min.js':'purify.min.js',
+  'marked/lib/marked.umd.js':'marked.umd.js',
   '@pdf-lib/fontkit/dist/fontkit.umd.min.js':'fontkit.min.js',
   'dejavu-fonts-ttf/ttf/DejaVuSans.ttf':'dejavu-sans.ttf',
   'tesseract.js/dist/tesseract.min.js':'tesseract.min.js',
@@ -29,9 +32,12 @@ const targets={
   '@jspawn/qpdf-wasm/qpdf.wasm':'qpdf/qpdf.wasm',
 };
 await Promise.all(Object.entries(targets).map(([from,to])=>cp(new URL(from,dependencies),new URL(to,vendor),{recursive:true})));
+const docxPreview=await readFile(new URL('docx-preview/dist/docx-preview.min.js',dependencies),'utf8');
+if(!docxPreview.includes('.docx={}'))throw Error('Неизвестный экспорт docx-preview');
+await writeFile(new URL('docx-preview.min.js',vendor),docxPreview.replace('.docx={}', '.docxPreview={}'));
 const licenses=new URL('licenses/',vendor);
 await mkdir(licenses,{recursive:true});
-const names=['pdf-lib','pdfjs-dist','jszip','docx','mammoth','lucide-static','@pdf-lib/fontkit','dejavu-fonts-ttf','tesseract.js','tesseract.js-core','@jspawn/qpdf-wasm'];
+const names=['docx-preview','html2canvas','dompurify','marked','pdf-lib','pdfjs-dist','jszip','docx','mammoth','lucide-static','@pdf-lib/fontkit','dejavu-fonts-ttf','tesseract.js','tesseract.js-core','@jspawn/qpdf-wasm'];
 for(const name of names) {
   const directory=new URL(name+'/',dependencies);
   for(const item of await readdir(directory)) {
