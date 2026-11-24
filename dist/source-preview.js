@@ -1,3 +1,4 @@
+import {getProfile} from './device-profile.js';
 import {ensureScript} from './assets.js';
 import {yieldToUI} from './performance.js';
 const textExtensions=/\.(txt|csv|md|html?)$/i;
@@ -82,6 +83,7 @@ function splitTable(table,limit,pageTop) {
 }
 export async function paginateFlow(root) {
   const originals=[...root.querySelectorAll(':scope > .docx-wrapper > section.docx,:scope > section.import-page')];
+  let blocks=0;
   for(const original of originals) {
     const {height,paddingBottom}=pageGeometry(original),limit=height-paddingBottom;
     const articles=[...original.children].filter(el=>el.tagName==='ARTICLE');
@@ -93,6 +95,7 @@ export async function paginateFlow(root) {
     for(const source of articles){const children=[...source.childNodes];source.replaceChildren();article=source;
       if(page!==original){article=source.cloneNode(false);page.append(article);source.remove();}
       for(const block of children) {
+        if(++blocks%24===0)await yieldToUI();
         if(block.nodeType!==1){article.append(block);continue;}
         article.append(block);
         let guard=0;
@@ -167,7 +170,12 @@ export async function createSourcePreview(file,host,report=()=>{},isCurrent=()=>
   try {
     if(kind==='image') {
       const image=document.createElement('img');image.alt=file.name;url=URL.createObjectURL(file);image.src=url;image.className='source-image';viewport.append(image);await image.decode();if(!isCurrent()){dispose();return {file,dispose};}
-      caption.textContent='Изображение';previous.disabled=next.disabled=true;note.textContent=image.naturalWidth+' × '+image.naturalHeight+' пикселей · '+file.name;
+      const originalWidth=image.naturalWidth,originalHeight=image.naturalHeight;
+      if(getProfile().low&&Math.max(originalWidth,originalHeight)>1600){
+        const canvas=document.createElement('canvas'),ratio=1280/Math.max(originalWidth,originalHeight);canvas.width=Math.round(originalWidth*ratio);canvas.height=Math.round(originalHeight*ratio);canvas.getContext('2d').drawImage(image,0,0,canvas.width,canvas.height);
+        try{const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/png'));if(blob&&isCurrent()){const old=url;url=URL.createObjectURL(blob);image.src=url;URL.revokeObjectURL(old);await image.decode();}}finally{canvas.width=0;}
+      }
+      caption.textContent='Изображение';previous.disabled=next.disabled=true;note.textContent=originalWidth+' × '+originalHeight+' пикселей · '+file.name;
     } else {
       frame=newFrame();viewport.append(frame);doc=setupFrame(frame);const root=doc.createElement('main');doc.body.append(root);
       if(kind==='docx') {

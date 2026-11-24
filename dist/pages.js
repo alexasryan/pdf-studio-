@@ -1,7 +1,8 @@
+import {getProfile} from './device-profile.js';
 import {resizePreview} from './resize.js';
 import {workerTask,renderQueue} from './performance.js';
 import {adjustCanvas} from './image-adjustments.js';
-import {ensureScript,acquire,open,renderPage,load,base,asBlob,canvasOf} from './pdf.js';
+import {ensureScript,acquire,open,renderPreviewPage as renderPage,load,base,asBlob,canvasOf} from './pdf.js';
 const {PDFDocument,degrees}=window.PDFLib;
 export const pageTools=new Set(['remove','extract','organize','rotate','split']);
 export async function transformPages(file,state,selectedOnly=false,existingSource=null) {
@@ -47,9 +48,10 @@ export async function createPages(file,kind,host,previous,onchange,onerror,getAd
   state.originalCount=source.numPages;
   let disposed=false, version=0, observer, previewVersion=0, previewPosition=0, zoom=1;
   const cache=new Map(), history=[], rawPreviews=new Map();
-  const thumbnailQueue=renderQueue(2);
+  const profile=getProfile();
+  const thumbnailQueue=renderQueue(profile.thumbnailConcurrency);
   let gridPage=0,pendingPreview=null,previewRunning=false;
-  const pageSize=48;
+  const pageSize=profile.pageSize;
   const toolbar=document.createElement('div'); toolbar.className='page-toolbar';
   const heading=document.createElement('h3');heading.textContent='Страницы · '+file.name;
   const info=document.createElement('p');info.className='hint';
@@ -85,14 +87,14 @@ export async function createPages(file,kind,host,previous,onchange,onerror,getAd
       const task=thumbnailQueue(async()=>{
         if(disposed||requested!==version)return null;
         const page=await source.getPage(index+1),unit=page.getViewport({scale:1});
-        const {canvas}=await renderPage(source,index,Math.min(1,180/Math.max(unit.width,unit.height)));
+        const {canvas}=await renderPage(source,index,Math.min(1,profile.thumbnailSide/Math.max(unit.width,unit.height)));
         try {if(disposed||requested!==version)return null;const blob=await asBlob(canvas,'image/jpeg',.78);if(disposed||requested!==version)return null;return URL.createObjectURL(blob);}finally{canvas.width=0;}
       });
       task.version=requested;task.ready=false;
       cache.set(index,task);
       task.then(url=>{task.ready=Boolean(url);if(!url&&cache.get(index)===task)cache.delete(index);}).catch(()=>{});
       task.catch(()=>{if(cache.get(index)===task)cache.delete(index);});
-      while(cache.size>64){const key=cache.keys().next().value;const old=cache.get(key);cache.delete(key);old.then(url=>{if(url)URL.revokeObjectURL(url);}).catch(()=>{});}
+      while(cache.size>profile.thumbnailCache){const key=cache.keys().next().value;const old=cache.get(key);cache.delete(key);old.then(url=>{if(url)URL.revokeObjectURL(url);}).catch(()=>{});}
     }
     return cache.get(index);
   }
@@ -100,7 +102,7 @@ export async function createPages(file,kind,host,previous,onchange,onerror,getAd
     if(!item||disposed)return;
     previewPosition=state.items.indexOf(item);
     const request=++previewVersion;
-    pendingPreview={item,request,scale:1.3*zoom,width:zoom*100};
+    pendingPreview={item,request,scale:profile.previewScale*zoom,width:zoom*100};
     preview.hidden=false;grid.hidden=true;pagination.hidden=true;
     previewTitle.textContent=(previewPosition+1)+' / '+state.items.length;
     if(previewRunning)return;
@@ -110,7 +112,7 @@ export async function createPages(file,kind,host,previous,onchange,onerror,getAd
         const job=pendingPreview;pendingPreview=null;
         const key=job.item.index+':'+job.scale;
         let raw=rawPreviews.get(key);
-        if(!raw){const rendered=await renderPage(source,job.item.index,job.scale);raw=rendered.canvas;raw.pdfUnit=rendered.unit;if(disposed){raw.width=0;break;}rawPreviews.set(key,raw);while(rawPreviews.size>2){const oldest=rawPreviews.keys().next().value;rawPreviews.get(oldest).width=0;rawPreviews.delete(oldest);}}
+        if(!raw){const rendered=await renderPage(source,job.item.index,job.scale);raw=rendered.canvas;raw.pdfUnit=rendered.unit;if(disposed){raw.width=0;break;}rawPreviews.set(key,raw);while(rawPreviews.size>profile.previewCache){const oldest=rawPreviews.keys().next().value;rawPreviews.get(oldest).width=0;rawPreviews.delete(oldest);}}
         if(disposed||job.request!==previewVersion)continue;
         const settings=getAdjustments();const resizing=Boolean(settings?.paperFormat&&job.item.selected);
         const canvas=resizing?resizePreview(raw,settings,job.item.angle):canvasOf(raw.width,raw.height);if(!resizing)canvas.getContext('2d').drawImage(raw,0,0);
