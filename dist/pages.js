@@ -42,6 +42,7 @@ export async function pageResult(file,state,kind) {
   return {name:base(file)+'-'+kind+'.pdf',blob:result};
 }
 export async function createPages(file,kind,host,previous,onchange,onerror,getAdjustments=()=>null) {
+  host.dataset.tool=kind;
   const lease=await acquire(file);
   const source=lease.doc;
   const state=previous||{items:Array.from({length:source.numPages},(_,index)=>({index,angle:0,selected:kind!=='extract',breakAfter:kind==='split'}))};
@@ -53,12 +54,13 @@ export async function createPages(file,kind,host,previous,onchange,onerror,getAd
   let gridPage=0,pendingPreview=null,previewRunning=false;
   const pageSize=profile.pageSize;
   const toolbar=document.createElement('div'); toolbar.className='page-toolbar';
+  const bulk=document.createElement('details');bulk.className='page-bulk';const summary=document.createElement('summary');summary.textContent='Выбрать страницы';const bulkActions=document.createElement('div');bulkActions.className='bulk-actions';bulk.append(summary,bulkActions);toolbar.append(bulk);
   const heading=document.createElement('h3');heading.textContent='Страницы · '+file.name;
   const info=document.createElement('p');info.className='hint';
   const grid=document.createElement('div');grid.className='page-grid';
   const preview=document.createElement('div');preview.className='page-preview';preview.hidden=true;
   const previewTitle=document.createElement('strong'),previewBody=document.createElement('div');
-  const makeButton=(label,fn,parent=toolbar,title=label)=>{const b=document.createElement('button');b.type='button';b.className='secondary';b.textContent=label;b.title=title;b.setAttribute('aria-label',title);b.onclick=fn;parent.append(b);return b;};
+  const makeButton=(label,fn,parent=bulkActions,title=label)=>{const b=document.createElement('button');b.type='button';b.className='secondary';b.textContent=label;b.title=title;b.setAttribute('aria-label',title);b.onclick=fn;parent.append(b);return b;};
   const selectionChanged=()=>{info.textContent=info.textContent.replace(/Выбрано: \d+/,'Выбрано: '+state.items.filter(p=>p.selected).length);for(const card of grid.children)card.querySelector('input').checked=state.items[Number(card.dataset.position)].selected;onchange(state);};
   const select=(value)=>{state.items.forEach(p=>p.selected=value);selectionChanged();};
   makeButton('Выбрать все',()=>select(true));makeButton('Снять выбор',()=>select(false));
@@ -66,7 +68,7 @@ export async function createPages(file,kind,host,previous,onchange,onerror,getAd
   const mutate=fn=>{save();fn();render();};
   makeButton('↻ Повернуть выбранные',()=>mutate(()=>state.items.filter(p=>p.selected).forEach(p=>p.angle=(p.angle+90)%360)));
   makeButton('🗑 Удалить выбранные',()=>{const keep=state.items.filter(p=>!p.selected);if(!keep.length){onerror('В документе должна остаться хотя бы одна страница.',true);return;}mutate(()=>{state.items=keep;});});
-  const undo=makeButton('Отменить',()=>{if(history.length){state.items=history.pop();render();}});
+  const undo=makeButton('Отменить',()=>{if(history.length){state.items=history.pop();render();}},toolbar);
   if(kind==='split') {
     makeButton('Каждая страница отдельно',()=>mutate(()=>state.items.forEach(p=>p.breakAfter=true)));
     makeButton('Одна часть',()=>mutate(()=>state.items.forEach(p=>p.breakAfter=false)));
@@ -136,7 +138,7 @@ export async function createPages(file,kind,host,previous,onchange,onerror,getAd
     undo.disabled=!history.length;
     if(!preview.hidden)void showPage(state.items[Math.min(previewPosition,state.items.length-1)]);
     const selected=state.items.filter(p=>p.selected).length;
-    info.textContent=state.items.length+' стр. · Выбрано: '+selected+'. Нажмите на миниатюру для просмотра. Корзина удаляет страницу; стрелки меняют порядок.'+(kind==='split'?' Кнопка «Разрез после» задаёт границы частей.':kind==='extract'?' В результат попадут только выбранные страницы.':['crop','watermark','jpg','png','ocr','color','resize'].includes(kind)?' Инструмент применяется к выбранным страницам.':' Выбор используется для группового поворота и удаления.');
+    info.textContent=state.items.length+' стр. · Выбрано: '+selected+'. Нажмите на миниатюру для просмотра. Нажмите «Удалить», чтобы убрать страницу. Порядок и копирование — в меню «Ещё».'+(kind==='split'?' Кнопка «Разрез после» задаёт границы частей.':kind==='extract'?' В результат попадут только выбранные страницы.':['crop','watermark','jpg','png','ocr','color','resize'].includes(kind)?' Инструмент применяется к выбранным страницам.':' Выбор используется для группового поворота и удаления.');
     observer=new IntersectionObserver(entries=>{if(disposed||current!==version)return;for(const entry of entries)if(entry.isIntersecting){observer.unobserve(entry.target);const img=entry.target.querySelector('img');thumb(Number(entry.target.dataset.index),current).then(url=>{if(url&&!disposed&&current===version)img.src=url;}).catch(e=>{if(!disposed&&current===version)onerror(e.message,true);});}},{root:null,rootMargin:'250px'});
     gridPage=Math.max(0,Math.min(gridPage,Math.ceil(state.items.length/pageSize)-1));
     const first=gridPage*pageSize;
@@ -151,12 +153,13 @@ export async function createPages(file,kind,host,previous,onchange,onerror,getAd
       const pic=makeButton('',()=>void showPage(item),card,'Открыть страницу '+(item.index+1));pic.className='page-thumb';const img=document.createElement('img');img.alt='Предпросмотр страницы '+(item.index+1);img.style.transform='rotate('+item.angle+'deg)';pic.append(img);
       card.prepend(label);
       const actions=document.createElement('div');actions.className='page-actions';
-      for(const [step,text] of [[-1,'←'],[1,'→']]){const b=makeButton(text,()=>mutate(()=>{const target=position+step;[state.items[position],state.items[target]]=[state.items[target],state.items[position]];}),actions,(step<0?'Переместить назад':'Переместить вперёд')+' страницу '+(item.index+1));b.disabled=position+step<0||position+step>=state.items.length;}
-      makeButton('↻',()=>mutate(()=>{item.angle=(item.angle+90)%360;}),actions,'Повернуть страницу '+(item.index+1));
-      makeButton('⧉',()=>mutate(()=>state.items.splice(position+1,0,{...item})),actions,'Дублировать страницу '+(item.index+1));
-      makeButton('🗑',()=>{if(state.items.length===1){onerror('Нельзя удалить последнюю страницу.',true);return;}mutate(()=>state.items.splice(position,1));},actions,'Удалить страницу '+(item.index+1));
-      card.append(actions);
-      if(kind==='split'){const b=makeButton(item.breakAfter?'✂ Разрез после ✓':'Разрез после',()=>mutate(()=>{item.breakAfter=!item.breakAfter;}),card);b.setAttribute('aria-pressed',String(item.breakAfter));}
+      const more=document.createElement('details');more.className='page-more';const labelMore=document.createElement('summary');labelMore.textContent='Ещё';const extra=document.createElement('div');extra.className='page-extra';more.append(labelMore,extra);
+      for(const [step,text] of [[-1,'←'],[1,'→']]){const b=makeButton(text,()=>mutate(()=>{const target=position+step;[state.items[position],state.items[target]]=[state.items[target],state.items[position]];}),extra,(step<0?'Переместить назад':'Переместить вперёд')+' страницу '+(item.index+1));b.disabled=position+step<0||position+step>=state.items.length;}
+      makeButton('Повернуть',()=>mutate(()=>{item.angle=(item.angle+90)%360;}),actions,'Повернуть страницу '+(item.index+1));
+      makeButton('Копия',()=>mutate(()=>state.items.splice(position+1,0,{...item})),extra,'Дублировать страницу '+(item.index+1));
+      makeButton('Удалить',()=>{if(state.items.length===1){onerror('Нельзя удалить последнюю страницу.',true);return;}mutate(()=>state.items.splice(position,1));},actions,'Удалить страницу '+(item.index+1));
+      card.append(actions,more);
+      if(kind==='split'){const b=makeButton(item.breakAfter?'Разделить здесь ✓':'Разделить здесь',()=>mutate(()=>{item.breakAfter=!item.breakAfter;}),card);b.setAttribute('aria-pressed',String(item.breakAfter));}
       grid.append(card);observer.observe(card);
     });
     onchange(state);

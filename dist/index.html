@@ -11,6 +11,7 @@
 <link rel="stylesheet" href="design.css">
 <link rel="stylesheet" href="polish.css">
 <link rel="stylesheet" href="lite.css?v=weak-pc-20261124">
+<link rel="stylesheet" href="workspace.css?v=20261127">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 </head>
 <body>
@@ -45,14 +46,15 @@
 <dialog id="workspace" aria-labelledby="operation-title"><div class="dialog-inner">
 <div class="dialog-head"><span id="operation-icon" class="tool-icon"></span><div><h2 id="operation-title"></h2><p id="operation-description"></p></div><button type="button" id="close" class="secondary" aria-label="Закрыть" data-icon="x"></button></div>
 <div class="workspace-toolbar">
-<div class="tool-switch"><label for="workspace-tool">Инструмент</label><select id="workspace-tool"></select></div>
+<details class="tool-menu"><summary>Другие инструменты</summary><div class="tool-switch"><label for="workspace-tool">Инструмент</label><select id="workspace-tool"></select></div></details>
 <div id="edit-actions" class="edit-actions" aria-label="Инструменты рисования" hidden></div>
+<button class="secondary" id="toggle-files" type="button" aria-expanded="false" aria-controls="workspace-sidebar">Файлы</button>
 <button class="secondary" id="toggle-settings" type="button" aria-expanded="true" aria-controls="workspace-sidebar">Настройки</button>
 </div>
 <div class="workspace-layout">
-<aside id="workspace-sidebar" class="workspace-sidebar">
-<section class="sidebar-section"><h3>Документы</h3><label class="picker" id="workspace-drop"><span data-icon="upload-cloud"></span><span>Добавить файлы</span><input id="file-input" type="file" multiple></label><ul id="files" class="files"></ul></section>
-<section class="sidebar-section"><h3>Настройки инструмента</h3><div id="options"></div></section>
+<aside id="workspace-sidebar" class="workspace-sidebar" hidden><button type="button" class="secondary drawer-close" id="close-panel">Готово</button>
+<section class="sidebar-section" data-panel="files"><h3>Документы</h3><label class="picker" id="workspace-drop"><span data-icon="upload-cloud"></span><span>Добавить файлы</span><input id="file-input" type="file" multiple></label><ul id="files" class="files"></ul></section>
+<section class="sidebar-section" data-panel="settings"><h3>Настройки инструмента</h3><div id="options"></div></section>
 <p class="hint">Документы обрабатываются на вашем устройстве.</p>
 </aside>
 <div class="workspace-main" id="workspace-main">
@@ -69,7 +71,7 @@
 </div></dialog>
 <input id="quick-input" type="file" accept=".pdf,image/jpeg,image/png,image/webp,.docx,.txt,.csv,.md,.html,.htm" multiple hidden>
 <script src="vendor/pdf-lib.min.js"></script>
-<script type="module" src="app.js?v=weak-pc-20261124"></script>
+<script type="module" src="app.js?v=workspace-20261127"></script>
 <script defer src="motion.js?v=weak-pc-20261124"></script>
 </body>
 </html>

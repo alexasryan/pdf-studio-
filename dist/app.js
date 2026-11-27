@@ -47,7 +47,17 @@ function workspaceView(mode=workspaceMode) {
 }
 $('document-tab').onclick=()=>workspaceView('document');
 $('pages-tab').onclick=()=>workspaceView('pages');
-$('toggle-settings').onclick=()=>{const sidebar=$('workspace-sidebar');sidebar.hidden=!sidebar.hidden;$('toggle-settings').setAttribute('aria-expanded',String(!sidebar.hidden));};
+function panel(name=null) {
+  const sidebar=$('workspace-sidebar');
+  sidebar.hidden=!name;sidebar.dataset.panel=name||'';
+  for(const section of sidebar.querySelectorAll('[data-panel]'))section.hidden=section.dataset.panel!==name;
+  $('toggle-settings').setAttribute('aria-expanded',String(name==='settings'));
+  $('toggle-files').setAttribute('aria-expanded',String(name==='files'));
+}
+$('toggle-settings').onclick=()=>panel(!$('workspace-sidebar').hidden&&$('workspace-sidebar').dataset.panel==='settings'?null:'settings');
+$('toggle-files').onclick=()=>panel(!$('workspace-sidebar').hidden&&$('workspace-sidebar').dataset.panel==='files'?null:'files');
+$('close-panel').onclick=()=>panel();
+$('document-content').addEventListener('pointerdown',()=>panel());
 async function switchTool(next) {
   if(next===id||busy||preparing)return;
   const entries=[...files];busy=true;sync();report('Сохраняем правки перед переключением…');
@@ -83,7 +93,7 @@ function toolNavigation() {
     const refresh=()=>{for(const b of actions.children)b.setAttribute('aria-pressed',String(b.dataset.mode===mode.value));};
     for(const [value,label] of [['text','Текст'],['ink','Карандаш'],['highlight','Выделить'],['image','Изображение']]) {
       const button=document.createElement('button');button.type='button';button.className='secondary';button.textContent=label;button.dataset.mode=value;
-      button.onclick=()=>{mode.value=value;mode.onchange();refresh();};actions.append(button);
+      button.onclick=()=>{mode.value=value;mode.onchange();refresh();panel(['text','image'].includes(value)?'settings':null);if(['text','image'].includes(value))fields.get(value==='text'?'text':'image').focus();};actions.append(button);
     }
     refresh();
   }
@@ -436,7 +446,8 @@ function show(key,initial=[],preferred=0) {
   renderOptions();
   workspaceMode=pageTools.has(id)||id==='merge'?'pages':'document';
   toolNavigation();
-  if(!initial.length){$('workspace-sidebar').hidden=false;$('toggle-settings').setAttribute('aria-expanded','true');}
+  panel();
+  document.querySelector('.tool-menu').open=false;
   if(!dialog.open) dialog.showModal();
   experience.remember(key);
   if(initial.length) {activeFile=initial[preferred]||initial[0];addFiles(initial);}
@@ -445,7 +456,7 @@ function show(key,initial=[],preferred=0) {
 function close() {if(!busy) dialog.close();}
 $('close').onclick=close;
 $('cancel').onclick=close;
-dialog.oncancel=event=>{if(busy) event.preventDefault();};
+dialog.oncancel=event=>{if(busy)event.preventDefault();else if(!$('workspace-sidebar').hidden){event.preventDefault();panel();}};
 dialog.onclose=()=>{resetStage();clearDocuments();clearDownload();};
 input.onchange=()=>{addFiles(input.files);input.value='';};
 
